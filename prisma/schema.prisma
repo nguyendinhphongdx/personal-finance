@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== AUTH ====================
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  settings  UserSettings?
+}
+
+model UserSettings {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiProvider   String? // "openai" | "google" | "anthropic"
+  aiModel      String? // "gpt-4o-mini" | "gemini-flash" | etc.
+  aiApiKey     String? // encrypted API key
+}
+
+// ==================== THU CHI ====================
+model Category {
+  id           String          @id @default(cuid())
+  name         String
+  type         TransactionType
+  icon         String?
+  color        String?
+  isDefault    Boolean         @default(false)
+  userId       String
+  createdAt    DateTime        @default(now())
+  budgets      Budget[]
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  amount      Float
+  type        TransactionType
+  description String?
+  date        DateTime
+  categoryId  String
+  category    Category        @relation(fields: [categoryId], references: [id])
+  userId      String
+  createdAt   DateTime        @default(now())
+
+  @@index([userId, date])
+  @@index([categoryId])
+}
+
+model Budget {
+  id         String   @id @default(cuid())
+  amount     Float
+  month      Int
+  year       Int
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  userId     String
+
+  @@unique([categoryId, month, year])
+  @@index([userId])
+}
+
+// ==================== RENTAL ====================
+model Property {
+  id             String          @id @default(cuid())
+  name           String          // "Nhà Quận 7", "Nhà Bình Thạnh"
+  address        String?
+  numFloors      Int             @default(1)
+  monthlyRent    Float?          // Tiền thuê gửi chủ nhà mỗi tháng
+  landlordName   String?
+  landlordPhone  String?
+  notes          String?
+  metadata       Json?           // [{label, value}] custom fields
+  isActive       Boolean         @default(true)
+  userId         String
+  createdAt      DateTime        @default(now())
+  rooms          Room[]
+  feeTypes       FeeType[]
+  billingPeriods BillingPeriod[]
+
+  @@index([userId])
+}
+
+model Room {
+  id           String        @id @default(cuid())
+  name         String
+  floor        Int
+  price        Float
+  isActive     Boolean       @default(true)
+  propertyId   String
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId       String
+  createdAt    DateTime      @default(now())
+  tenants      Tenant[]
+  contracts    Contract[]
+  billingItems BillingItem[]
+
+  @@index([propertyId])
+  @@index([userId])
+}
+
+model Tenant {
+  id          String    @id @default(cuid())
+  name        String
+  phone       String?
+  idNumber    String?
+  isFamily    Boolean   @default(false)
+  moveInDate  DateTime
+  moveOutDate DateTime?
+  roomId      String
+  room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime  @default(now())
+
+  @@index([roomId])
+  @@index([userId])
+}
+
+model Contract {
+  id        String    @id @default(cuid())
+  roomId    String
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startDate DateTime
+  endDate   DateTime?
+  fileUrl   String
+  fileName  String
+  userId    String
+  createdAt DateTime  @default(now())
+
+  @@index([roomId])
+}
+
+// ==================== FEE CONFIG (per property) ====================
+model FeeType {
+  id           String   @id @default(cuid())
+  name         String
+  unit         String?
+  calcMode     CalcMode
+  defaultPrice Float
+  isDefault    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  propertyId   String
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId       String
+  createdAt    DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([userId])
+}
+
+enum CalcMode {
+  PER_UNIT
+  PER_PERSON
+  FIXED
+}
+
+// ==================== BILLING (per property per month) ====================
+model BillingPeriod {
+  id                 String        @id @default(cuid())
+  month              Int
+  year               Int
+  isLocked           Boolean       @default(false)
+  actualElectricBill Float?
+  landlordPayment    Float?
+  totalCollected     Float?
+  notes              String?
+  propertyId         String
+  property           Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId             String
+  items              BillingItem[]
+  lockedAt           DateTime?
+  createdAt          DateTime      @default(now())
+
+  @@unique([month, year, propertyId])
+}
+
+model BillingItem {
+  id                String           @id @default(cuid())
+  billingPeriodId   String
+  billingPeriod     BillingPeriod    @relation(fields: [billingPeriodId], references: [id], onDelete: Cascade)
+  roomId            String
+  room              Room             @relation(fields: [roomId], references: [id])
+  snapshotRoomName  String
+  snapshotFloor     Int
+  snapshotPrice     Float
+  snapshotTenants   Json
+  snapshotNumPeople Int
+  fees              BillingItemFee[]
+  totalAmount       Float            @default(0)
+  isPaid            Boolean          @default(false)
+  paidAt            DateTime?
+
+  @@index([billingPeriodId])
+  @@index([roomId])
+}
+
+model BillingItemFee {
+  id            String      @id @default(cuid())
+  billingItemId String
+  billingItem   BillingItem @relation(fields: [billingItemId], references: [id], onDelete: Cascade)
+  feeName       String
+  calcMode      CalcMode
+  unitPrice     Float
+  quantity      Float
+  amount        Float
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}

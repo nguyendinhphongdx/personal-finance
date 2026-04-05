@@ -1,5 +1,15 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Environment variables
+.env
+.env.local
+.env.production
+
+# PWA generated files
+public/sw.js
+public/workbox-*.js
+public/sw.js.map
+
 # dependencies
 /node_modules
 /.pnp
@@ -39,3 +49,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
