@@ -42,7 +42,7 @@ export function ConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel className="cursor-pointer">{cancelText}</AlertDialogCancel>
           <AlertDialogAction
-            onClick={onConfirm}
+            onClick={() => { onOpenChange(false); onConfirm(); }}
             className={`cursor-pointer ${variant === "destructive" ? "bg-destructive text-white hover:bg-destructive/90" : ""}`}
           >
             {confirmText}

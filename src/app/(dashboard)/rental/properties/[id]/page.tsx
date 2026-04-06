@@ -126,6 +126,7 @@ export default function PropertyDetailPage() {
   const [feeForm, setFeeForm] = useState({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" });
   const [summaryForm, setSummaryForm] = useState({ actualElectricBill: "", landlordPayment: "", notes: "" });
   const [billPreview, setBillPreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadProperty = useCallback(async () => {
     const res = await fetch(`/api/properties`);
@@ -179,17 +180,20 @@ export default function PropertyDetailPage() {
   // ==================== ROOMS ====================
   async function handleRoomSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const url = editRoomId ? `/api/rooms/${editRoomId}` : "/api/rooms";
-    const method = editRoomId ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: roomForm.name, floor: parseInt(roomForm.floor), price: parseFloat(roomForm.price), propertyId }),
-    });
-    if (res.ok) {
-      toast.success(editRoomId ? "Cập nhật phòng thành công" : "Thêm phòng thành công");
-      setRoomDialog(false); setRoomForm({ name: "", floor: "", price: "" }); setEditRoomId(null);
-      loadRooms();
-    } else { const d = await res.json(); toast.error(d.error); }
+    setSubmitting(true);
+    try {
+      const url = editRoomId ? `/api/rooms/${editRoomId}` : "/api/rooms";
+      const method = editRoomId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: roomForm.name, floor: parseInt(roomForm.floor), price: parseFloat(roomForm.price), propertyId }),
+      });
+      if (res.ok) {
+        toast.success(editRoomId ? "Cập nhật phòng thành công" : "Thêm phòng thành công");
+        setRoomDialog(false); setRoomForm({ name: "", floor: "", price: "" }); setEditRoomId(null);
+        loadRooms();
+      } else { const d = await res.json(); toast.error(d.error); }
+    } finally { setSubmitting(false); }
   }
 
   function handleDeleteRoom(id: string) {
@@ -199,8 +203,11 @@ export default function PropertyDetailPage() {
       confirmText: "Xóa phòng",
       variant: "destructive",
       onConfirm: async () => {
-        await fetch(`/api/rooms/${id}`, { method: "DELETE" });
-        toast.success("Đã xóa"); loadRooms(); loadTenants();
+        setSubmitting(true);
+        try {
+          await fetch(`/api/rooms/${id}`, { method: "DELETE" });
+          toast.success("Đã xóa"); loadRooms(); loadTenants();
+        } finally { setSubmitting(false); }
       },
     });
   }
@@ -208,16 +215,19 @@ export default function PropertyDetailPage() {
   // ==================== TENANTS ====================
   async function handleTenantSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/tenants", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tenantForm),
-    });
-    if (res.ok) {
-      toast.success("Thêm người thuê thành công");
-      setTenantDialog(false);
-      setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false, moveInDate: new Date().toISOString().split("T")[0], roomId: "" });
-      loadRooms(); loadTenants();
-    } else { const d = await res.json(); toast.error(d.error); }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/tenants", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tenantForm),
+      });
+      if (res.ok) {
+        toast.success("Thêm người thuê thành công");
+        setTenantDialog(false);
+        setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false, moveInDate: new Date().toISOString().split("T")[0], roomId: "" });
+        loadRooms(); loadTenants();
+      } else { const d = await res.json(); toast.error(d.error); }
+    } finally { setSubmitting(false); }
   }
 
   function handleMoveOut(id: string) {
@@ -226,11 +236,14 @@ export default function PropertyDetailPage() {
       description: "Người thuê sẽ được đánh dấu đã trả phòng với ngày hôm nay.",
       confirmText: "Xác nhận",
       onConfirm: async () => {
-        await fetch(`/api/tenants/${id}`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ moveOutDate: new Date().toISOString() }),
-        });
-        toast.success("Đã cập nhật"); loadRooms(); loadTenants();
+        setSubmitting(true);
+        try {
+          await fetch(`/api/tenants/${id}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ moveOutDate: new Date().toISOString() }),
+          });
+          toast.success("Đã cập nhật"); loadRooms(); loadTenants();
+        } finally { setSubmitting(false); }
       },
     });
   }
@@ -242,8 +255,11 @@ export default function PropertyDetailPage() {
       confirmText: "Xóa",
       variant: "destructive",
       onConfirm: async () => {
-        await fetch(`/api/tenants/${id}`, { method: "DELETE" });
-        toast.success("Đã xóa"); loadRooms(); loadTenants();
+        setSubmitting(true);
+        try {
+          await fetch(`/api/tenants/${id}`, { method: "DELETE" });
+          toast.success("Đã xóa"); loadRooms(); loadTenants();
+        } finally { setSubmitting(false); }
       },
     });
   }
@@ -251,17 +267,20 @@ export default function PropertyDetailPage() {
   // ==================== FEE TYPES ====================
   async function handleFeeSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const url = editFeeId ? `/api/fee-types/${editFeeId}` : "/api/fee-types";
-    const method = editFeeId ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: feeForm.name, unit: feeForm.unit || null, calcMode: feeForm.calcMode, defaultPrice: parseFloat(feeForm.defaultPrice), sortOrder: parseInt(feeForm.sortOrder), propertyId }),
-    });
-    if (res.ok) {
-      toast.success(editFeeId ? "Cập nhật thành công" : "Thêm loại phí thành công");
-      setFeeDialog(false); setFeeForm({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" }); setEditFeeId(null);
-      loadFeeTypes();
-    } else { const d = await res.json(); toast.error(d.error); }
+    setSubmitting(true);
+    try {
+      const url = editFeeId ? `/api/fee-types/${editFeeId}` : "/api/fee-types";
+      const method = editFeeId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: feeForm.name, unit: feeForm.unit || null, calcMode: feeForm.calcMode, defaultPrice: parseFloat(feeForm.defaultPrice), sortOrder: parseInt(feeForm.sortOrder), propertyId }),
+      });
+      if (res.ok) {
+        toast.success(editFeeId ? "Cập nhật thành công" : "Thêm loại phí thành công");
+        setFeeDialog(false); setFeeForm({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" }); setEditFeeId(null);
+        loadFeeTypes();
+      } else { const d = await res.json(); toast.error(d.error); }
+    } finally { setSubmitting(false); }
   }
 
   function handleDeleteFee(id: string) {
@@ -271,20 +290,26 @@ export default function PropertyDetailPage() {
       confirmText: "Xóa",
       variant: "destructive",
       onConfirm: async () => {
-        await fetch(`/api/fee-types/${id}`, { method: "DELETE" });
-        toast.success("Đã xóa"); loadFeeTypes();
+        setSubmitting(true);
+        try {
+          await fetch(`/api/fee-types/${id}`, { method: "DELETE" });
+          toast.success("Đã xóa"); loadFeeTypes();
+        } finally { setSubmitting(false); }
       },
     });
   }
 
   // ==================== BILLING ====================
   async function createBilling() {
-    const res = await fetch("/api/billing", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month, year, propertyId }),
-    });
-    if (res.ok) { toast.success("Tạo hóa đơn thành công"); loadBilling(); }
-    else { const d = await res.json(); toast.error(d.error); }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/billing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, year, propertyId }),
+      });
+      if (res.ok) { toast.success("Tạo hóa đơn thành công"); loadBilling(); }
+      else { const d = await res.json(); toast.error(d.error); }
+    } finally { setSubmitting(false); }
   }
 
   function handleToggleLock() {
@@ -297,11 +322,14 @@ export default function PropertyDetailPage() {
         description: "Sau khi chốt, dữ liệu hóa đơn sẽ được khóa và không thể chỉnh sửa. Bạn vẫn có thể mở khóa sau nếu cần.",
         confirmText: "Chốt sổ",
         onConfirm: async () => {
-          await fetch(`/api/billing/${billing.id}`, {
-            method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "lock" }),
-          });
-          toast.success("Đã chốt sổ"); loadBilling();
+          setSubmitting(true);
+          try {
+            await fetch(`/api/billing/${billing.id}`, {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "lock" }),
+            });
+            toast.success("Đã chốt sổ"); loadBilling();
+          } finally { setSubmitting(false); }
         },
       });
     } else {
@@ -310,44 +338,56 @@ export default function PropertyDetailPage() {
         description: "Mở khóa để chỉnh sửa hóa đơn tháng này.",
         confirmText: "Mở khóa",
         onConfirm: async () => {
-          await fetch(`/api/billing/${billing.id}`, {
-            method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "unlock" }),
-          });
-          toast.success("Đã mở khóa"); loadBilling();
+          setSubmitting(true);
+          try {
+            await fetch(`/api/billing/${billing.id}`, {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "unlock" }),
+            });
+            toast.success("Đã mở khóa"); loadBilling();
+          } finally { setSubmitting(false); }
         },
       });
     }
   }
 
   async function handleTogglePaid(itemId: string, isPaid: boolean) {
-    await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isPaid }),
-    });
-    loadBilling();
+    setSubmitting(true);
+    try {
+      await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPaid }),
+      });
+      loadBilling();
+    } finally { setSubmitting(false); }
   }
 
   async function handleUpdateFees(itemId: string, fees: { feeName: string; calcMode: string; unitPrice: number; quantity: number }[]) {
     if (billing?.isLocked) { toast.error("Kỳ hóa đơn đã khóa"); return; }
-    await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fees }),
-    });
-    loadBilling();
+    setSubmitting(true);
+    try {
+      await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fees }),
+      });
+      loadBilling();
+    } finally { setSubmitting(false); }
   }
 
   async function handleSaveSummary() {
     if (!billing) return;
-    await fetch(`/api/billing/${billing.id}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        actualElectricBill: summaryForm.actualElectricBill ? parseFloat(summaryForm.actualElectricBill) : null,
-        landlordPayment: summaryForm.landlordPayment ? parseFloat(summaryForm.landlordPayment) : null,
-        notes: summaryForm.notes || null,
-      }),
-    });
-    toast.success("Lưu thành công"); loadBilling();
+    setSubmitting(true);
+    try {
+      await fetch(`/api/billing/${billing.id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actualElectricBill: summaryForm.actualElectricBill ? parseFloat(summaryForm.actualElectricBill) : null,
+          landlordPayment: summaryForm.landlordPayment ? parseFloat(summaryForm.landlordPayment) : null,
+          notes: summaryForm.notes || null,
+        }),
+      });
+      toast.success("Lưu thành công"); loadBilling();
+    } finally { setSubmitting(false); }
   }
 
   // Group rooms by floor
@@ -398,7 +438,7 @@ export default function PropertyDetailPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => v && handleTabChange(v)}>
-        <TabsList>
+        <TabsList className="w-full overflow-x-auto justify-start">
           <TabsTrigger value="rooms" className="cursor-pointer"><DoorOpen className="h-4 w-4 mr-1" /> Phòng & Người ở</TabsTrigger>
           <TabsTrigger value="billing" className="cursor-pointer"><Receipt className="h-4 w-4 mr-1" /> Hóa đơn</TabsTrigger>
           <TabsTrigger value="fees" className="cursor-pointer"><SlidersHorizontal className="h-4 w-4 mr-1" /> Loại phí</TabsTrigger>
@@ -434,7 +474,7 @@ export default function PropertyDetailPage() {
                       <input type="checkbox" id="isFamily" checked={tenantForm.isFamily} onChange={(e) => setTenantForm({ ...tenantForm, isFamily: e.target.checked })} className="cursor-pointer" />
                       <Label htmlFor="isFamily" className="cursor-pointer">Người nhà <InfoTooltip content="VD: em gái, người thân" /></Label>
                     </div>
-                    <Button type="submit" className="w-full cursor-pointer">Thêm</Button>
+                    <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Thêm</Button>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -450,7 +490,7 @@ export default function PropertyDetailPage() {
                       <div className="space-y-2"><Label>Tầng</Label><Input type="number" value={roomForm.floor} onChange={(e) => setRoomForm({ ...roomForm, floor: e.target.value })} min={1} required /></div>
                       <div className="space-y-2"><Label>Giá phòng (VND)</Label><CurrencyInput value={roomForm.price} onValueChange={(v) => setRoomForm({ ...roomForm, price: v })} placeholder="2.500.000" required /></div>
                     </div>
-                    <Button type="submit" className="w-full cursor-pointer">{editRoomId ? "Cập nhật" : "Thêm"}</Button>
+                    <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{editRoomId ? "Cập nhật" : "Thêm"}</Button>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -466,30 +506,12 @@ export default function PropertyDetailPage() {
                 {floorRooms.map((room) => (
                   <Card key={room.id} className="transition-all duration-200 hover:shadow-md">
                     <CardContent className="py-3 px-4">
-                      <div className="flex items-center gap-4">
-                        {/* Room info */}
-                        <div className="flex items-center gap-2 min-w-32">
+                      <div className="flex items-center justify-between gap-2">
+                        {/* Room info + Price */}
+                        <div className="flex items-center gap-2">
                           <DoorOpen className="h-4 w-4 text-primary shrink-0" />
                           <span className="font-semibold">{room.name}</span>
-                        </div>
-
-                        {/* Price */}
-                        <div className="min-w-28 text-right">
-                          <span className="font-medium text-sm">{formatCurrency(room.price)}</span>
-                        </div>
-
-                        {/* Tenants */}
-                        <div className="flex-1 flex items-center gap-2 flex-wrap">
-                          {room.tenants.length > 0 ? room.tenants.map((t) => (
-                            <div key={t.id} className="flex items-center gap-1 bg-muted/50 rounded-full px-2.5 py-0.5 text-sm">
-                              <span>{t.name}</span>
-                              {t.isFamily && <Badge variant="default" className="text-[10px] px-1 py-0 h-4">GĐ</Badge>}
-                              <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer" onClick={() => handleMoveOut(t.id)} title="Trả phòng"><UserX className="h-3 w-3" /></Button>
-                              <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer text-destructive" onClick={() => handleDeleteTenant(t.id)}><Trash2 className="h-3 w-3" /></Button>
-                            </div>
-                          )) : (
-                            <span className="text-xs text-muted-foreground italic">Trống</span>
-                          )}
+                          <span className="text-sm text-muted-foreground">{formatCurrency(room.price)}</span>
                         </div>
 
                         {/* Actions */}
@@ -497,6 +519,20 @@ export default function PropertyDetailPage() {
                           <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => { setRoomForm({ name: room.name, floor: room.floor.toString(), price: room.price.toString() }); setEditRoomId(room.id); setRoomDialog(true); }}><Edit2 className="h-3 w-3" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleDeleteRoom(room.id)}><Trash2 className="h-3 w-3" /></Button>
                         </div>
+                      </div>
+
+                      {/* Tenants */}
+                      <div className="flex items-center gap-2 flex-wrap mt-2 pl-6">
+                        {room.tenants.length > 0 ? room.tenants.map((t) => (
+                          <div key={t.id} className="flex items-center gap-1 bg-muted/50 rounded-full px-2.5 py-0.5 text-sm">
+                            <span>{t.name}</span>
+                            {t.isFamily && <Badge variant="default" className="text-[10px] px-1 py-0 h-4">GĐ</Badge>}
+                            <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer" onClick={() => handleMoveOut(t.id)} title="Trả phòng"><UserX className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer text-destructive" onClick={() => handleDeleteTenant(t.id)}><Trash2 className="h-3 w-3" /></Button>
+                          </div>
+                        )) : (
+                          <span className="text-xs text-muted-foreground italic">Trống</span>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -523,8 +559,8 @@ export default function PropertyDetailPage() {
                 ) : (
                   <Badge variant="secondary"><Unlock className="h-3 w-3 mr-1" /> Chưa chốt</Badge>
                 )}
-                <Button variant={billing.isLocked ? "outline" : "default"} size="sm" onClick={handleToggleLock} className="cursor-pointer">
-                  {billing.isLocked ? <><Unlock className="h-4 w-4 mr-1" /> Mở khóa</> : <><Lock className="h-4 w-4 mr-1" /> Chốt sổ</>}
+                <Button variant={billing.isLocked ? "outline" : "default"} size="sm" onClick={handleToggleLock} className="cursor-pointer" disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : billing.isLocked ? <><Unlock className="h-4 w-4 mr-1" /> Mở khóa</> : <><Lock className="h-4 w-4 mr-1" /> Chốt sổ</>}
                 </Button>
               </div>
             )}
@@ -534,13 +570,13 @@ export default function PropertyDetailPage() {
             <Card><CardContent className="py-12 text-center space-y-4">
               <Receipt className="h-12 w-12 mx-auto text-muted-foreground" />
               <p className="text-muted-foreground">Chưa có hóa đơn cho {formatMonthYear(month, year)}</p>
-              <Button onClick={createBilling} className="cursor-pointer">Tạo hóa đơn <InfoTooltip content="Tự động tạo hóa đơn cho tất cả phòng đang có người ở" /></Button>
+              <Button onClick={createBilling} className="cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Tạo hóa đơn <InfoTooltip content="Tự động tạo hóa đơn cho tất cả phòng đang có người ở" /></Button>
             </CardContent></Card>
           ) : billing.items.length === 0 ? (
             <Card><CardContent className="py-8 text-center space-y-3">
               <p className="text-muted-foreground">Chưa có hóa đơn phòng nào cho tháng này.</p>
               <p className="text-sm text-muted-foreground">Nếu đã thêm người thuê, bấm nút bên dưới để tạo hóa đơn.</p>
-              <Button onClick={createBilling} className="cursor-pointer">Tạo hóa đơn cho phòng có người ở</Button>
+              <Button onClick={createBilling} className="cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Tạo hóa đơn cho phòng có người ở</Button>
             </CardContent></Card>
           ) : (
             <div className="space-y-4">
@@ -623,7 +659,7 @@ export default function PropertyDetailPage() {
                         <Label className="text-xs">Ghi chú</Label>
                         <Input value={summaryForm.notes} onChange={(e) => setSummaryForm({ ...summaryForm, notes: e.target.value })} placeholder="Ghi chú tháng này..." disabled={billing.isLocked} className="w-60" />
                       </div>
-                      {!billing.isLocked && <Button onClick={handleSaveSummary} className="cursor-pointer w-full">Lưu tổng kết</Button>}
+                      {!billing.isLocked && <Button onClick={handleSaveSummary} className="cursor-pointer w-full" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Lưu tổng kết</Button>}
                     </div>
                   </div>
                 </CardContent>
@@ -659,7 +695,7 @@ export default function PropertyDetailPage() {
                     <div className="space-y-2"><Label>Đơn giá</Label><CurrencyInput value={feeForm.defaultPrice} onValueChange={(v) => setFeeForm({ ...feeForm, defaultPrice: v })} placeholder="4.000" required /></div>
                     <div className="space-y-2"><Label>Đơn vị</Label><Input value={feeForm.unit} onChange={(e) => setFeeForm({ ...feeForm, unit: e.target.value })} placeholder="kWh" /></div>
                   </div>
-                  <Button type="submit" className="w-full cursor-pointer">{editFeeId ? "Cập nhật" : "Thêm"}</Button>
+                  <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{editFeeId ? "Cập nhật" : "Thêm"}</Button>
                 </form>
               </DialogContent>
             </Dialog>
@@ -831,9 +867,14 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
   onTogglePaid: (isPaid: boolean) => void;
   onUpdateFees: (fees: { feeName: string; calcMode: string; unitPrice: number; quantity: number }[]) => void;
 }) {
-  const [localFees, setLocalFees] = useState(item.fees.map((f) => ({ ...f })));
+  const feesKey = JSON.stringify(item.fees);
+  const [localFees, setLocalFees] = useState(() => item.fees.map((f) => ({ ...f })));
+  const [prevFeesKey, setPrevFeesKey] = useState(feesKey);
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => { setLocalFees(item.fees.map((f) => ({ ...f }))); }, [item.fees]);
+  if (feesKey !== prevFeesKey) {
+    setPrevFeesKey(feesKey);
+    setLocalFees(item.fees.map((f) => ({ ...f })));
+  }
 
   function handleQtyChange(idx: number, val: string) {
     const updated = [...localFees];
