@@ -12,6 +12,8 @@ import {
   Wallet, CheckCircle2, AlertCircle, Lock,
 } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, Legend,
@@ -96,10 +98,15 @@ export default function RentalOverviewPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">
-        Tổng quan cho thuê
-        <InfoTooltip content="Tổng hợp thông tin và hiệu suất tất cả nhà cho thuê" />
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">
+          Tổng quan cho thuê
+          <InfoTooltip content="Tổng hợp thông tin và hiệu suất tất cả nhà cho thuê" />
+        </h1>
+        <Link href="/rental/properties">
+          <Button className="cursor-pointer"><Plus className="h-4 w-4 mr-2" /> Thêm nhà</Button>
+        </Link>
+      </div>
 
       {/* Row 1: Overview stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
