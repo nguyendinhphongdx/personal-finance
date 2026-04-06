@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   ResponsiveContainer, Legend,
@@ -104,7 +103,7 @@ export default function RentalOverviewPage() {
           <InfoTooltip content="Tổng hợp thông tin và hiệu suất tất cả nhà cho thuê" />
         </h1>
         <Link href="/rental/properties">
-          <Button className="cursor-pointer"><Plus className="h-4 w-4 mr-2" /> Thêm nhà</Button>
+          <Button className="cursor-pointer"><Building2 className="h-4 w-4 mr-2" /> Quản lý nhà</Button>
         </Link>
       </div>
 

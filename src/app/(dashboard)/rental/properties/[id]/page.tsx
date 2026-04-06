@@ -546,7 +546,7 @@ export default function PropertyDetailPage() {
         {/* ===== TAB: HÓA ĐƠN ===== */}
         <TabsContent value="billing" className="space-y-4">
           {/* Month nav + Lock */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" className="cursor-pointer" onClick={() => { const m = month === 1 ? 12 : month - 1; const y = month === 1 ? year - 1 : year; handleMonthChange(m, y); }}><ChevronLeft className="h-4 w-4" /></Button>
               <span className="font-semibold min-w-36 text-center">{formatMonthYear(month, year)}</span>
