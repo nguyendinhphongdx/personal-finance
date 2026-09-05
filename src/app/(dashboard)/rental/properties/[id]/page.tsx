@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { TenantMultiselectCombobox } from "@/components/shared/tenant-multiselect-combobox";
 import { formatCurrency, formatDate, formatMonthYear, CALC_MODE_LABELS, CALC_MODE_TOOLTIPS } from "@/lib/format";
 import {
   Home, DoorOpen, Users, Plus, Edit2, Trash2, Loader2, MapPin,
@@ -32,11 +33,14 @@ interface Property {
 }
 interface Room {
   id: string; name: string; floor: number; price: number; isActive: boolean; propertyId: string;
-  tenants: Tenant[];
+  assignments: Assignment[];
+}
+interface Assignment {
+  id: string; moveInDate: string; moveOutDate?: string; tenant: Tenant;
 }
 interface Tenant {
-  id: string; name: string; phone?: string; idNumber?: string; isFamily: boolean;
-  moveInDate: string; moveOutDate?: string; roomId: string; room?: { name: string };
+  id: string; name: string; phone?: string; idNumber?: string; isFamily: boolean; propertyId: string;
+  assignments?: { id: string; moveInDate: string; moveOutDate?: string; room?: { id: string; name: string } }[];
 }
 interface FeeType {
   id: string; name: string; unit?: string; calcMode: string; defaultPrice: number;
@@ -105,9 +109,12 @@ export default function PropertyDetailPage() {
   // Dialog states
   const [roomDialog, setRoomDialog] = useState(false);
   const [tenantDialog, setTenantDialog] = useState(false);
+  const [assignDialog, setAssignDialog] = useState(false);
   const [feeDialog, setFeeDialog] = useState(false);
   const [editRoomId, setEditRoomId] = useState<string | null>(null);
   const [editFeeId, setEditFeeId] = useState<string | null>(null);
+  const [editTenantId, setEditTenantId] = useState<string | null>(null);
+  const [assignRoomId, setAssignRoomId] = useState<string | null>(null);
 
   // Confirm dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -122,7 +129,8 @@ export default function PropertyDetailPage() {
 
   // Forms
   const [roomForm, setRoomForm] = useState({ name: "", floor: "", price: "" });
-  const [tenantForm, setTenantForm] = useState({ name: "", phone: "", idNumber: "", isFamily: false, moveInDate: new Date().toISOString().split("T")[0], roomId: "" });
+  const [tenantForm, setTenantForm] = useState({ name: "", phone: "", idNumber: "", isFamily: false });
+  const [assignForm, setAssignForm] = useState<{ tenantIds: string[]; moveInDate: string }>({ tenantIds: [], moveInDate: new Date().toISOString().split("T")[0] });
   const [feeForm, setFeeForm] = useState({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" });
   const [summaryForm, setSummaryForm] = useState({ actualElectricBill: "", landlordPayment: "", notes: "" });
   const [billPreview, setBillPreview] = useState<string | null>(null);
@@ -217,20 +225,64 @@ export default function PropertyDetailPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await fetch("/api/tenants", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tenantForm),
+      const url = editTenantId ? `/api/tenants/${editTenantId}` : "/api/tenants";
+      const method = editTenantId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editTenantId ? tenantForm : { ...tenantForm, propertyId }),
       });
       if (res.ok) {
-        toast.success("Thêm người thuê thành công");
-        setTenantDialog(false);
-        setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false, moveInDate: new Date().toISOString().split("T")[0], roomId: "" });
+        toast.success(editTenantId ? "Cập nhật thành công" : "Thêm người thuê thành công");
+        setTenantDialog(false); setEditTenantId(null);
+        setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false });
+        loadTenants();
+      } else { const d = await res.json(); toast.error(d.error); }
+    } finally { setSubmitting(false); }
+  }
+
+  function handleDeleteTenant(id: string) {
+    showConfirm({
+      title: "Xóa người thuê?",
+      description: "Xóa vĩnh viễn thông tin người thuê này, không thể khôi phục.",
+      confirmText: "Xóa vĩnh viễn",
+      variant: "destructive",
+      onConfirm: async () => {
+        setSubmitting(true);
+        try {
+          await fetch(`/api/tenants/${id}`, { method: "DELETE" });
+          toast.success("Đã xóa"); loadRooms(); loadTenants();
+        } finally { setSubmitting(false); }
+      },
+    });
+  }
+
+  // ==================== ROOM ASSIGNMENTS ====================
+  function openAssignDialog(room: Room) {
+    setAssignRoomId(room.id);
+    setAssignForm({
+      tenantIds: room.assignments.filter((a) => !a.moveOutDate).map((a) => a.tenant.id),
+      moveInDate: new Date().toISOString().split("T")[0],
+    });
+    setAssignDialog(true);
+  }
+
+  async function handleAssignSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!assignRoomId) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/rooms/${assignRoomId}/assignments`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assignForm),
+      });
+      if (res.ok) {
+        toast.success("Đã cập nhật người ở"); setAssignDialog(false); setAssignRoomId(null);
         loadRooms(); loadTenants();
       } else { const d = await res.json(); toast.error(d.error); }
     } finally { setSubmitting(false); }
   }
 
-  function handleMoveOut(id: string) {
+  function handleMoveOut(assignmentId: string) {
     showConfirm({
       title: "Xác nhận trả phòng?",
       description: "Người thuê sẽ được đánh dấu đã trả phòng với ngày hôm nay.",
@@ -238,27 +290,24 @@ export default function PropertyDetailPage() {
       onConfirm: async () => {
         setSubmitting(true);
         try {
-          await fetch(`/api/tenants/${id}`, {
-            method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ moveOutDate: new Date().toISOString() }),
-          });
+          await fetch(`/api/room-assignments/${assignmentId}`, { method: "PATCH" });
           toast.success("Đã cập nhật"); loadRooms(); loadTenants();
         } finally { setSubmitting(false); }
       },
     });
   }
 
-  function handleDeleteTenant(id: string) {
+  function handleRemoveFromRoom(assignmentId: string) {
     showConfirm({
-      title: "Xóa người thuê?",
-      description: "Xóa vĩnh viễn thông tin người thuê này.",
-      confirmText: "Xóa",
+      title: "Gỡ khỏi phòng?",
+      description: "Xóa bản ghi ở phòng này (không xóa thông tin người thuê).",
+      confirmText: "Gỡ",
       variant: "destructive",
       onConfirm: async () => {
         setSubmitting(true);
         try {
-          await fetch(`/api/tenants/${id}`, { method: "DELETE" });
-          toast.success("Đã xóa"); loadRooms(); loadTenants();
+          await fetch(`/api/room-assignments/${assignmentId}`, { method: "DELETE" });
+          toast.success("Đã gỡ"); loadRooms(); loadTenants();
         } finally { setSubmitting(false); }
       },
     });
@@ -440,6 +489,7 @@ export default function PropertyDetailPage() {
       <Tabs value={activeTab} onValueChange={(v) => v && handleTabChange(v)}>
         <TabsList className="w-full overflow-x-auto justify-start">
           <TabsTrigger value="rooms" className="cursor-pointer"><DoorOpen className="h-4 w-4 mr-1" /> Phòng & Người ở</TabsTrigger>
+          <TabsTrigger value="tenants" className="cursor-pointer"><Users className="h-4 w-4 mr-1" /> Người ở</TabsTrigger>
           <TabsTrigger value="billing" className="cursor-pointer"><Receipt className="h-4 w-4 mr-1" /> Hóa đơn</TabsTrigger>
           <TabsTrigger value="fees" className="cursor-pointer"><SlidersHorizontal className="h-4 w-4 mr-1" /> Loại phí</TabsTrigger>
           <TabsTrigger value="info" className="cursor-pointer"><FileText className="h-4 w-4 mr-1" /> Thông tin</TabsTrigger>
@@ -448,33 +498,24 @@ export default function PropertyDetailPage() {
         {/* ===== TAB: PHÒNG & NGƯỜI Ở ===== */}
         <TabsContent value="rooms" className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{rooms.length} phòng, {rooms.reduce((s, r) => s + r.tenants.length, 0)} người ở</p>
+            <p className="text-sm text-muted-foreground">{rooms.length} phòng, {rooms.reduce((s, r) => s + r.assignments.filter((a) => !a.moveOutDate).length, 0)} người ở</p>
             <div className="flex gap-2">
-              <Dialog open={tenantDialog} onOpenChange={(o) => { setTenantDialog(o); if (!o) setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false, moveInDate: new Date().toISOString().split("T")[0], roomId: "" }); }}>
-                <DialogTrigger>
-                  <Button variant="outline" className="cursor-pointer"><Users className="h-4 w-4 mr-2" /> Thêm người</Button>
-                </DialogTrigger>
+              <Dialog open={assignDialog} onOpenChange={(o) => { setAssignDialog(o); if (!o) setAssignRoomId(null); }}>
                 <DialogContent>
-                  <DialogHeader><DialogTitle>Thêm người thuê</DialogTitle></DialogHeader>
-                  <form onSubmit={handleTenantSubmit} className="space-y-4">
-                    <div className="space-y-2"><Label>Họ tên</Label><Input value={tenantForm.name} onChange={(e) => setTenantForm({ ...tenantForm, name: e.target.value })} required /></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label>SĐT</Label><Input value={tenantForm.phone} onChange={(e) => setTenantForm({ ...tenantForm, phone: e.target.value })} /></div>
-                      <div className="space-y-2"><Label>CCCD</Label><Input value={tenantForm.idNumber} onChange={(e) => setTenantForm({ ...tenantForm, idNumber: e.target.value })} /></div>
-                    </div>
+                  <DialogHeader><DialogTitle>Quản lý người ở phòng</DialogTitle></DialogHeader>
+                  <form onSubmit={handleAssignSubmit} className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Phòng</Label>
-                      <Select value={tenantForm.roomId} onValueChange={(v) => setTenantForm({ ...tenantForm, roomId: v ?? "" })}>
-                        <SelectTrigger className="cursor-pointer"><SelectValue placeholder="Chọn phòng" /></SelectTrigger>
-                        <SelectContent>{rooms.map((r) => <SelectItem key={r.id} value={r.id} className="cursor-pointer">{r.name} - Tầng {r.floor}</SelectItem>)}</SelectContent>
-                      </Select>
+                      <Label>Người thuê</Label>
+                      <TenantMultiselectCombobox
+                        tenants={tenants}
+                        value={assignForm.tenantIds}
+                        onChange={(tenantIds) => setAssignForm({ ...assignForm, tenantIds })}
+                        propertyId={propertyId}
+                        onTenantCreated={loadTenants}
+                      />
                     </div>
-                    <div className="space-y-2"><Label>Ngày vào</Label><Input type="date" value={tenantForm.moveInDate} onChange={(e) => setTenantForm({ ...tenantForm, moveInDate: e.target.value })} required /></div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="isFamily" checked={tenantForm.isFamily} onChange={(e) => setTenantForm({ ...tenantForm, isFamily: e.target.checked })} className="cursor-pointer" />
-                      <Label htmlFor="isFamily" className="cursor-pointer">Người nhà <InfoTooltip content="VD: em gái, người thân" /></Label>
-                    </div>
-                    <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Thêm</Button>
+                    <div className="space-y-2"><Label>Ngày vào (cho người mới)</Label><Input type="date" value={assignForm.moveInDate} onChange={(e) => setAssignForm({ ...assignForm, moveInDate: e.target.value })} required /></div>
+                    <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Lưu</Button>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -516,6 +557,7 @@ export default function PropertyDetailPage() {
 
                         {/* Actions */}
                         <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => openAssignDialog(room)} title="Quản lý người ở"><Users className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => { setRoomForm({ name: room.name, floor: room.floor.toString(), price: room.price.toString() }); setEditRoomId(room.id); setRoomDialog(true); }}><Edit2 className="h-3 w-3" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleDeleteRoom(room.id)}><Trash2 className="h-3 w-3" /></Button>
                         </div>
@@ -523,16 +565,19 @@ export default function PropertyDetailPage() {
 
                       {/* Tenants */}
                       <div className="flex items-center gap-2 flex-wrap mt-2 pl-6">
-                        {room.tenants.length > 0 ? room.tenants.map((t) => (
-                          <div key={t.id} className="flex items-center gap-1 bg-muted/50 rounded-full px-2.5 py-0.5 text-sm">
-                            <span>{t.name}</span>
-                            {t.isFamily && <Badge variant="default" className="text-[10px] px-1 py-0 h-4">GĐ</Badge>}
-                            <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer" onClick={() => handleMoveOut(t.id)} title="Trả phòng"><UserX className="h-3 w-3" /></Button>
-                            <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer text-destructive" onClick={() => handleDeleteTenant(t.id)}><Trash2 className="h-3 w-3" /></Button>
-                          </div>
-                        )) : (
-                          <span className="text-xs text-muted-foreground italic">Trống</span>
-                        )}
+                        {(() => {
+                          const active = room.assignments.filter((a) => !a.moveOutDate);
+                          return active.length > 0 ? active.map((a) => (
+                            <div key={a.id} className="flex items-center gap-1 bg-muted/50 rounded-full px-2.5 py-0.5 text-sm">
+                              <span>{a.tenant.name}</span>
+                              {a.tenant.isFamily && <Badge variant="default" className="text-[10px] px-1 py-0 h-4">GĐ</Badge>}
+                              <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer" onClick={() => handleMoveOut(a.id)} title="Trả phòng"><UserX className="h-3 w-3" /></Button>
+                              <Button variant="ghost" size="icon" className="h-5 w-5 cursor-pointer text-destructive" onClick={() => handleRemoveFromRoom(a.id)} title="Gỡ khỏi phòng"><Trash2 className="h-3 w-3" /></Button>
+                            </div>
+                          )) : (
+                            <span className="text-xs text-muted-foreground italic">Trống</span>
+                          );
+                        })()}
                       </div>
                     </CardContent>
                   </Card>
@@ -542,6 +587,61 @@ export default function PropertyDetailPage() {
           ))}
         </TabsContent>
 
+        {/* ===== TAB: NGƯỜI Ở ===== */}
+        <TabsContent value="tenants" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{tenants.length} người thuê</p>
+            <Dialog open={tenantDialog} onOpenChange={(o) => { setTenantDialog(o); if (!o) { setEditTenantId(null); setTenantForm({ name: "", phone: "", idNumber: "", isFamily: false }); } }}>
+              <DialogTrigger>
+                <Button className="cursor-pointer"><Plus className="h-4 w-4 mr-2" /> Thêm người thuê</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>{editTenantId ? "Sửa người thuê" : "Thêm người thuê"}</DialogTitle></DialogHeader>
+                <form onSubmit={handleTenantSubmit} className="space-y-4">
+                  <div className="space-y-2"><Label>Họ tên</Label><Input value={tenantForm.name} onChange={(e) => setTenantForm({ ...tenantForm, name: e.target.value })} required /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>SĐT</Label><Input value={tenantForm.phone} onChange={(e) => setTenantForm({ ...tenantForm, phone: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>CCCD</Label><Input value={tenantForm.idNumber} onChange={(e) => setTenantForm({ ...tenantForm, idNumber: e.target.value })} /></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="isFamily" checked={tenantForm.isFamily} onChange={(e) => setTenantForm({ ...tenantForm, isFamily: e.target.checked })} className="cursor-pointer" />
+                    <Label htmlFor="isFamily" className="cursor-pointer">Người nhà <InfoTooltip content="VD: em gái, người thân" /></Label>
+                  </div>
+                  <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{editTenantId ? "Cập nhật" : "Thêm"}</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {tenants.length === 0 ? (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">Chưa có người thuê nào</CardContent></Card>
+          ) : (
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Tên</TableHead><TableHead>SĐT</TableHead><TableHead>Phòng hiện tại</TableHead><TableHead>Trạng thái</TableHead><TableHead className="w-20"></TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {tenants.map((t) => {
+                  const active = t.assignments?.find((a) => !a.moveOutDate);
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-medium">{t.name}{t.isFamily && <Badge variant="default" className="text-[10px] px-1 py-0 h-4 ml-1">GĐ</Badge>}</TableCell>
+                      <TableCell className="text-muted-foreground">{t.phone || "—"}</TableCell>
+                      <TableCell>{active?.room?.name ?? "—"}</TableCell>
+                      <TableCell>{active ? <Badge className="bg-green-500 text-white">Đang ở</Badge> : <Badge variant="secondary">Chưa/đã rời</Badge>}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => { setTenantForm({ name: t.name, phone: t.phone || "", idNumber: t.idNumber || "", isFamily: t.isFamily }); setEditTenantId(t.id); setTenantDialog(true); }}><Edit2 className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleDeleteTenant(t.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </TabsContent>
 
         {/* ===== TAB: HÓA ĐƠN ===== */}
         <TabsContent value="billing" className="space-y-4">

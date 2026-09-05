@@ -88,21 +88,22 @@ model Property {
   rooms          Room[]
   feeTypes       FeeType[]
   billingPeriods BillingPeriod[]
+  tenants        Tenant[]
 
   @@index([userId])
 }
 
 model Room {
-  id           String        @id @default(cuid())
+  id           String           @id @default(cuid())
   name         String
   floor        Int
   price        Float
-  isActive     Boolean       @default(true)
+  isActive     Boolean          @default(true)
   propertyId   String
-  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  property     Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   userId       String
-  createdAt    DateTime      @default(now())
-  tenants      Tenant[]
+  createdAt    DateTime         @default(now())
+  assignments  RoomAssignment[]
   contracts    Contract[]
   billingItems BillingItem[]
 
@@ -111,19 +112,35 @@ model Room {
 }
 
 model Tenant {
-  id          String    @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
   phone       String?
   idNumber    String?
-  isFamily    Boolean   @default(false)
-  moveInDate  DateTime
-  moveOutDate DateTime?
+  isFamily    Boolean          @default(false)
+  propertyId  String
+  property    Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime         @default(now())
+  assignments RoomAssignment[]
+
+  @@index([propertyId])
+  @@index([userId])
+}
+
+model RoomAssignment {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   roomId      String
   room        Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  moveInDate  DateTime
+  moveOutDate DateTime?
   userId      String
   createdAt   DateTime  @default(now())
 
+  @@index([tenantId])
   @@index([roomId])
+  @@index([roomId, moveOutDate])
   @@index([userId])
 }
 

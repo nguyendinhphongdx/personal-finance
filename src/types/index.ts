@@ -38,8 +38,14 @@ export interface TenantFormData {
   phone?: string;
   idNumber?: string;
   isFamily: boolean;
-  moveInDate: string;
+  propertyId: string;
+}
+
+// Room assignment (tenant <-> room, historical)
+export interface RoomAssignmentFormData {
   roomId: string;
+  tenantIds: string[];
+  moveInDate: string;
 }
 
 // Fee Type

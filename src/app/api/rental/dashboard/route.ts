@@ -17,7 +17,7 @@ export async function GET() {
       include: {
         rooms: {
           where: { isActive: true },
-          include: { tenants: { where: { moveOutDate: null } } },
+          include: { assignments: { where: { moveOutDate: null } } },
         },
       },
     });
@@ -54,8 +54,8 @@ export async function GET() {
 
     // Aggregate stats
     const totalRooms = properties.reduce((s, p) => s + p.rooms.length, 0);
-    const occupiedRooms = properties.reduce((s, p) => s + p.rooms.filter((r) => r.tenants.length > 0).length, 0);
-    const totalTenants = properties.reduce((s, p) => s + p.rooms.reduce((rs, r) => rs + r.tenants.length, 0), 0);
+    const occupiedRooms = properties.reduce((s, p) => s + p.rooms.filter((r) => r.assignments.length > 0).length, 0);
+    const totalTenants = properties.reduce((s, p) => s + p.rooms.reduce((rs, r) => rs + r.assignments.length, 0), 0);
     const totalMonthlyRent = properties.reduce((s, p) => s + (p.monthlyRent || 0), 0);
 
     // Current month stats
@@ -98,7 +98,7 @@ export async function GET() {
     const propertyStats = properties.map((p) => {
       const billing = currentBillings.find((b) => b.propertyId === p.id);
       const rooms = p.rooms.length;
-      const occupied = p.rooms.filter((r) => r.tenants.length > 0).length;
+      const occupied = p.rooms.filter((r) => r.assignments.length > 0).length;
       const revenue = billing?.items.reduce((s, i) => s + i.totalAmount, 0) ?? 0;
       const paid = billing?.items.filter((i) => i.isPaid).reduce((s, i) => s + i.totalAmount, 0) ?? 0;
       const unpaidCount = billing?.items.filter((i) => !i.isPaid).length ?? 0;
@@ -113,7 +113,7 @@ export async function GET() {
         rooms,
         occupied,
         occupancyRate: rooms > 0 ? Math.round((occupied / rooms) * 100) : 0,
-        tenants: p.rooms.reduce((s, r) => s + r.tenants.length, 0),
+        tenants: p.rooms.reduce((s, r) => s + r.assignments.length, 0),
         revenue,
         paid,
         unpaidCount,

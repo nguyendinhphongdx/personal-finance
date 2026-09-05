@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const data = await prisma.room.findMany({
       where: { userId, ...(propertyId && { propertyId }) },
       include: {
-        tenants: { where: { moveOutDate: null }, orderBy: { moveInDate: "asc" } },
+        assignments: { where: { moveOutDate: null }, include: { tenant: true }, orderBy: { moveInDate: "asc" } },
         contracts: { orderBy: { createdAt: "desc" }, take: 1 },
         property: { select: { id: true, name: true } },
       },

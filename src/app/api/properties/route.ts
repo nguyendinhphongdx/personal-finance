@@ -10,7 +10,7 @@ export async function GET() {
       include: {
         rooms: {
           where: { isActive: true },
-          include: { tenants: { where: { moveOutDate: null } } },
+          include: { assignments: { where: { moveOutDate: null } } },
           orderBy: [{ floor: "asc" }, { name: "asc" }],
         },
       },

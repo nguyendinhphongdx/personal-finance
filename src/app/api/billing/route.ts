@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     // Auto-generate billing items from rooms
     const rooms = await prisma.room.findMany({
       where: { propertyId, isActive: true },
-      include: { tenants: { where: { moveOutDate: null } } },
+      include: { assignments: { where: { moveOutDate: null }, include: { tenant: true } } },
     });
 
     const feeTypes = await prisma.feeType.findMany({
@@ -68,14 +68,14 @@ export async function POST(req: NextRequest) {
     });
 
     for (const room of rooms) {
-      if (room.tenants.length === 0) continue;
+      if (room.assignments.length === 0) continue;
 
       const existing = await prisma.billingItem.findFirst({
         where: { billingPeriodId: period.id, roomId: room.id },
       });
       if (existing) continue; // Don't overwrite existing items
 
-      const numPeople = room.tenants.length;
+      const numPeople = room.assignments.length;
       const fees = feeTypes.map((ft) => {
         let quantity = 1;
         if (ft.calcMode === "PER_PERSON") quantity = numPeople;
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
           snapshotRoomName: room.name,
           snapshotFloor: room.floor,
           snapshotPrice: room.price,
-          snapshotTenants: room.tenants.map((t) => ({ name: t.name, isFamily: t.isFamily })),
+          snapshotTenants: room.assignments.map((a) => ({ name: a.tenant.name, isFamily: a.tenant.isFamily })),
           snapshotNumPeople: numPeople,
           totalAmount: room.price + totalFees,
           fees: { create: fees },

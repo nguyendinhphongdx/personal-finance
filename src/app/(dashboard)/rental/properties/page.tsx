@@ -145,7 +145,7 @@ export default function PropertiesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {properties.map((p) => {
             const totalRooms = p.rooms?.length || 0;
-            const totalTenants = p.rooms?.reduce((s, r) => s + (r.tenants?.length || 0), 0) || 0;
+            const totalTenants = p.rooms?.reduce((s, r) => s + (r.assignments?.filter((a) => !a.moveOutDate).length || 0), 0) || 0;
             return (
               <Card key={p.id} className="transition-all duration-200 hover:shadow-lg">
                 <CardHeader className="pb-2">

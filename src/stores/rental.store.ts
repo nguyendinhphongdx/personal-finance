@@ -20,8 +20,15 @@ interface Room {
   price: number;
   isActive: boolean;
   propertyId: string;
-  tenants: Tenant[];
+  assignments: RoomAssignment[];
   contracts: Contract[];
+}
+
+interface RoomAssignment {
+  id: string;
+  moveInDate: string;
+  moveOutDate?: string;
+  tenant: Tenant;
 }
 
 interface Tenant {
@@ -30,10 +37,7 @@ interface Tenant {
   phone?: string;
   idNumber?: string;
   isFamily: boolean;
-  moveInDate: string;
-  moveOutDate?: string;
-  roomId: string;
-  room?: { id: string; name: string; floor: number };
+  propertyId: string;
 }
 
 interface Contract {
