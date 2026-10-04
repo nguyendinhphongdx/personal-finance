@@ -54,7 +54,12 @@ function CurrencyInput({ value, onValueChange, suffix = "₫", allowNegative = f
     if (allowed.includes(e.key)) return;
     // Allow Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
     if ((e.ctrlKey || e.metaKey) && ["a", "c", "v", "x"].includes(e.key.toLowerCase())) return;
-    if (allowNegative && e.key === "-") return;
+    // "-" flips the sign wherever the cursor is (typing it after the digits would otherwise be stripped)
+    if (allowNegative && e.key === "-") {
+      e.preventDefault();
+      toggleSign();
+      return;
+    }
     // Block non-digit
     if (!/^\d$/.test(e.key)) {
       e.preventDefault();

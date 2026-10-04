@@ -350,6 +350,7 @@ export default function PropertyDetailPage() {
   async function handleFeeSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (feeForm.scope === "some" && feeForm.roomIds.length === 0) { toast.error("Chọn ít nhất 1 phòng"); return; }
+    if (!Number.isFinite(parseFloat(feeForm.defaultPrice))) { toast.error("Nhập đơn giá"); return; }
     setSubmitting(true);
     try {
       const url = editFeeId ? `/api/fee-types/${editFeeId}` : "/api/fee-types";
@@ -828,7 +829,7 @@ export default function PropertyDetailPage() {
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Đơn giá</Label><CurrencyInput value={feeForm.defaultPrice} onValueChange={(v) => setFeeForm({ ...feeForm, defaultPrice: v })} placeholder="4.000" required /></div>
+                    <div className="space-y-2"><Label>Đơn giá <InfoTooltip content="Số âm (gõ - hoặc bấm ±) = giảm trừ, VD: giảm giá người quen" /></Label><CurrencyInput value={feeForm.defaultPrice} onValueChange={(v) => setFeeForm({ ...feeForm, defaultPrice: v })} allowNegative placeholder="4.000" required /></div>
                     <div className="space-y-2"><Label>Đơn vị</Label><Input value={feeForm.unit} onChange={(e) => setFeeForm({ ...feeForm, unit: e.target.value })} placeholder="kWh" /></div>
                   </div>
                   <div className="space-y-2">
@@ -875,7 +876,7 @@ export default function PropertyDetailPage() {
                   <TableRow key={ft.id}>
                     <TableCell className="font-medium">{ft.name}</TableCell>
                     <TableCell><Badge variant="outline">{CALC_MODE_LABELS[ft.calcMode]} <InfoTooltip content={CALC_MODE_TOOLTIPS[ft.calcMode]} /></Badge></TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency(ft.defaultPrice)}</TableCell>
+                    <TableCell className={`text-right font-mono ${ft.defaultPrice < 0 ? "text-green-600 dark:text-green-400" : ""}`}>{formatCurrency(ft.defaultPrice)}</TableCell>
                     <TableCell className="text-muted-foreground">{ft.unit || "—"}</TableCell>
                     <TableCell>
                       {ft.rooms.length === 0 ? (

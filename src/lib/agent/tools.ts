@@ -354,7 +354,7 @@ const createFeeType = define(
     propertyId: z.string(),
     name: z.string().min(1),
     calcMode: calcModeSchema,
-    defaultPrice: z.number().min(0),
+    defaultPrice: z.number().describe("Số âm = giảm trừ hằng tháng"),
     unit: z.string().optional(),
     roomIds: z.array(z.string()).optional(),
   }),
