@@ -1,10 +1,13 @@
 import { prisma } from "@/lib/prisma";
+import { NotFoundError } from "@/lib/errors";
+import { getUserId } from "@/lib/request-context";
+import { assertOwnsCategory } from "./ownership";
 
 export const transactionRepo = {
-  findMany: (userId: string, filters?: { startDate?: string; endDate?: string; type?: string; categoryId?: string }) => {
+  findMany: (filters?: { startDate?: string; endDate?: string; type?: string; categoryId?: string }) => {
     return prisma.transaction.findMany({
       where: {
-        userId,
+        userId: getUserId(),
         ...(filters?.type && { type: filters.type as "INCOME" | "EXPENSE" }),
         ...(filters?.categoryId && { categoryId: filters.categoryId }),
         ...(filters?.startDate || filters?.endDate
@@ -21,14 +24,18 @@ export const transactionRepo = {
     });
   },
 
-  create: (data: { amount: number; type: "INCOME" | "EXPENSE"; description?: string; date: Date; categoryId: string; userId: string }) => {
+  create: async (data: { amount: number; type: "INCOME" | "EXPENSE"; description?: string; date: Date; categoryId: string }) => {
+    await assertOwnsCategory(data.categoryId);
     return prisma.transaction.create({
-      data,
+      data: { ...data, userId: getUserId() },
       include: { category: true },
     });
   },
 
-  update: (id: string, userId: string, data: { amount?: number; description?: string; date?: Date; categoryId?: string }) => {
+  update: async (id: string, data: { amount?: number; description?: string; date?: Date; categoryId?: string }) => {
+    const existing = await prisma.transaction.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy giao dịch");
+    if (data.categoryId) await assertOwnsCategory(data.categoryId);
     return prisma.transaction.update({
       where: { id },
       data,
@@ -36,11 +43,14 @@ export const transactionRepo = {
     });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.transaction.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy giao dịch");
     return prisma.transaction.delete({ where: { id } });
   },
 
-  getStats: async (userId: string, startDate: Date, endDate: Date) => {
+  getStats: async (startDate: Date, endDate: Date) => {
+    const userId = getUserId();
     const [income, expense] = await Promise.all([
       prisma.transaction.aggregate({
         where: { userId, type: "INCOME", date: { gte: startDate, lte: endDate } },
@@ -57,10 +67,10 @@ export const transactionRepo = {
     };
   },
 
-  getByCategory: (userId: string, startDate: Date, endDate: Date) => {
+  getByCategory: (startDate: Date, endDate: Date) => {
     return prisma.transaction.groupBy({
       by: ["categoryId", "type"],
-      where: { userId, date: { gte: startDate, lte: endDate } },
+      where: { userId: getUserId(), date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
     });
   },

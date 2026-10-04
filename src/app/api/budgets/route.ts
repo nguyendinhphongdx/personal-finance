@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { success, error, requireAuth, handleApiError } from "@/lib/api-utils";
+import { success, error, requireAuth, withUserContext, handleApiError } from "@/lib/api-utils";
+import { assertOwnsCategory } from "@/lib/repositories/ownership";
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,19 +24,21 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await requireAuth();
-    const body = await req.json();
-    const { amount, month, year, categoryId } = body;
+    return await withUserContext(async (userId) => {
+      const body = await req.json();
+      const { amount, month, year, categoryId } = body;
 
-    if (!amount || !month || !year || !categoryId) return error("Thiếu thông tin");
+      if (!amount || !month || !year || !categoryId) return error("Thiếu thông tin");
+      await assertOwnsCategory(categoryId);
 
-    const data = await prisma.budget.upsert({
-      where: { categoryId_month_year: { categoryId, month, year } },
-      update: { amount },
-      create: { amount, month, year, categoryId, userId },
-      include: { category: true },
+      const data = await prisma.budget.upsert({
+        where: { categoryId_month_year: { categoryId, month, year } },
+        update: { amount },
+        create: { amount, month, year, categoryId, userId },
+        include: { category: true },
+      });
+      return success(data);
     });
-    return success(data);
   } catch (err) {
     return handleApiError(err);
   }

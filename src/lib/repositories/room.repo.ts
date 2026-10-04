@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { NotFoundError, BadRequestError } from "@/lib/errors";
+import { assertOwnsProperty, assertOwnsRoom } from "./ownership";
+import { getUserId } from "@/lib/request-context";
 
 export const roomRepo = {
-  findMany: (userId: string) => {
+  findMany: () => {
     return prisma.room.findMany({
-      where: { userId },
+      where: { userId: getUserId() },
       include: {
         assignments: { where: { moveOutDate: null }, include: { tenant: true }, orderBy: { moveInDate: "asc" } },
         contracts: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -13,8 +16,8 @@ export const roomRepo = {
   },
 
   findById: (id: string) => {
-    return prisma.room.findUnique({
-      where: { id },
+    return prisma.room.findFirst({
+      where: { id, userId: getUserId() },
       include: {
         assignments: { include: { tenant: true }, orderBy: { moveInDate: "asc" } },
         contracts: { orderBy: { createdAt: "desc" } },
@@ -22,23 +25,28 @@ export const roomRepo = {
     });
   },
 
-  create: (data: { name: string; floor: number; price: number; propertyId: string; userId: string }) => {
-    return prisma.room.create({ data });
+  create: async (data: { name: string; floor: number; price: number; propertyId: string }) => {
+    await assertOwnsProperty(data.propertyId);
+    return prisma.room.create({ data: { ...data, userId: getUserId() } });
   },
 
-  update: (id: string, data: { name?: string; floor?: number; price?: number; isActive?: boolean }) => {
+  update: async (id: string, data: { name?: string; floor?: number; price?: number; isActive?: boolean }) => {
+    const existing = await prisma.room.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy phòng");
     return prisma.room.update({ where: { id }, data });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.room.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy phòng");
     return prisma.room.delete({ where: { id } });
   },
 };
 
 export const tenantRepo = {
-  findMany: (userId: string, propertyId?: string) => {
+  findMany: (propertyId?: string) => {
     return prisma.tenant.findMany({
-      where: { userId, ...(propertyId && { propertyId }) },
+      where: { userId: getUserId(), ...(propertyId && { propertyId }) },
       include: {
         assignments: {
           where: { moveOutDate: null },
@@ -49,32 +57,42 @@ export const tenantRepo = {
     });
   },
 
-  create: (data: { name: string; phone?: string; idNumber?: string; isFamily: boolean; propertyId: string; userId: string }) => {
-    return prisma.tenant.create({ data, include: { assignments: true } });
+  create: async (data: { name: string; phone?: string; idNumber?: string; isFamily: boolean; propertyId: string }) => {
+    await assertOwnsProperty(data.propertyId);
+    return prisma.tenant.create({ data: { ...data, userId: getUserId() }, include: { assignments: true } });
   },
 
-  update: (id: string, data: { name?: string; phone?: string; idNumber?: string; isFamily?: boolean }) => {
+  update: async (id: string, data: { name?: string; phone?: string; idNumber?: string; isFamily?: boolean }) => {
+    const existing = await prisma.tenant.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy người thuê");
     return prisma.tenant.update({ where: { id }, data, include: { assignments: true } });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.tenant.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy người thuê");
     return prisma.tenant.delete({ where: { id } });
   },
 };
 
 export const roomAssignmentRepo = {
-  setRoomTenants: async (roomId: string, tenantIds: string[], userId: string, moveInDate: Date) => {
-    const room = await prisma.room.findUniqueOrThrow({ where: { id: roomId } });
+  setRoomTenants: async (roomId: string, tenantIds: string[], moveInDate: Date) => {
+    const userId = getUserId();
+    const room = await prisma.room.findFirst({ where: { id: roomId, userId } });
+    if (!room) throw new NotFoundError("Không tìm thấy phòng");
 
     if (tenantIds.length > 0) {
-      const tenants = await prisma.tenant.findMany({ where: { id: { in: tenantIds } } });
+      const tenants = await prisma.tenant.findMany({ where: { id: { in: tenantIds }, userId } });
+      if (tenants.length !== tenantIds.length) {
+        throw new NotFoundError("Không tìm thấy người thuê");
+      }
       if (tenants.some((t) => t.propertyId !== room.propertyId)) {
-        throw new Error("Người thuê không thuộc tài sản này");
+        throw new BadRequestError("Người thuê không thuộc tài sản này");
       }
     }
 
     return prisma.$transaction(async (tx) => {
-      const active = await tx.roomAssignment.findMany({ where: { roomId, moveOutDate: null } });
+      const active = await tx.roomAssignment.findMany({ where: { roomId, userId, moveOutDate: null } });
 
       const toMoveOut = active.filter((a) => !tenantIds.includes(a.tenantId));
       if (toMoveOut.length > 0) {
@@ -90,7 +108,7 @@ export const roomAssignmentRepo = {
       for (const tenantId of toAssign) {
         // End any active assignment this tenant has elsewhere before reassigning
         await tx.roomAssignment.updateMany({
-          where: { tenantId, moveOutDate: null },
+          where: { tenantId, userId, moveOutDate: null },
           data: { moveOutDate: new Date() },
         });
         await tx.roomAssignment.create({
@@ -99,35 +117,42 @@ export const roomAssignmentRepo = {
       }
 
       return tx.roomAssignment.findMany({
-        where: { roomId, moveOutDate: null },
+        where: { roomId, userId, moveOutDate: null },
         include: { tenant: true },
       });
     });
   },
 
-  moveOut: (id: string) => {
+  moveOut: async (id: string) => {
+    const existing = await prisma.roomAssignment.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy bản ghi ở phòng");
     return prisma.roomAssignment.update({ where: { id }, data: { moveOutDate: new Date() } });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.roomAssignment.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy bản ghi ở phòng");
     return prisma.roomAssignment.delete({ where: { id } });
   },
 };
 
 export const contractRepo = {
-  findMany: (userId: string) => {
+  findMany: () => {
     return prisma.contract.findMany({
-      where: { userId },
+      where: { userId: getUserId() },
       include: { room: true },
       orderBy: { createdAt: "desc" },
     });
   },
 
-  create: (data: { roomId: string; startDate: Date; endDate?: Date; fileUrl: string; fileName: string; userId: string }) => {
-    return prisma.contract.create({ data, include: { room: true } });
+  create: async (data: { roomId: string; startDate: Date; endDate?: Date; fileUrl: string; fileName: string }) => {
+    await assertOwnsRoom(data.roomId);
+    return prisma.contract.create({ data: { ...data, userId: getUserId() }, include: { room: true } });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.contract.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy hợp đồng");
     return prisma.contract.delete({ where: { id } });
   },
 };
@@ -135,20 +160,25 @@ export const contractRepo = {
 export const feeTypeRepo = {
   findMany: (propertyId: string) => {
     return prisma.feeType.findMany({
-      where: { propertyId, isActive: true },
+      where: { propertyId, userId: getUserId(), isActive: true },
       orderBy: { sortOrder: "asc" },
     });
   },
 
-  create: (data: { name: string; unit?: string; calcMode: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice: number; sortOrder?: number; propertyId: string; userId: string }) => {
-    return prisma.feeType.create({ data });
+  create: async (data: { name: string; unit?: string; calcMode: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice: number; sortOrder?: number; propertyId: string }) => {
+    await assertOwnsProperty(data.propertyId);
+    return prisma.feeType.create({ data: { ...data, userId: getUserId() } });
   },
 
-  update: (id: string, data: { name?: string; unit?: string; calcMode?: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice?: number; sortOrder?: number; isActive?: boolean }) => {
+  update: async (id: string, data: { name?: string; unit?: string; calcMode?: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice?: number; sortOrder?: number; isActive?: boolean }) => {
+    const existing = await prisma.feeType.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy loại phí");
     return prisma.feeType.update({ where: { id }, data });
   },
 
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    const existing = await prisma.feeType.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy loại phí");
     return prisma.feeType.update({ where: { id }, data: { isActive: false } });
   },
 };

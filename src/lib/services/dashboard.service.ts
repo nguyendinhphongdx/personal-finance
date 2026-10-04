@@ -1,6 +1,7 @@
 import { transactionRepo } from "@/lib/repositories/transaction.repo";
 import { billingRepo } from "@/lib/repositories/billing.repo";
 import { prisma } from "@/lib/prisma";
+import { getUserId } from "@/lib/request-context";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
 
 type Period = "week" | "month" | "quarter" | "year";
@@ -19,19 +20,20 @@ function getDateRange(period: Period, date: Date) {
 }
 
 export const dashboardService = {
-  getStats: async (userId: string, period: Period = "month", date: Date = new Date()) => {
+  getStats: async (period: Period = "month", date: Date = new Date()) => {
+    const userId = getUserId();
     const { start, end } = getDateRange(period, date);
 
     const [txStats, categoryStats, recentTx, billingPeriods] = await Promise.all([
-      transactionRepo.getStats(userId, start, end),
-      transactionRepo.getByCategory(userId, start, end),
+      transactionRepo.getStats(start, end),
+      transactionRepo.getByCategory(start, end),
       prisma.transaction.findMany({
         where: { userId, date: { gte: start, lte: end } },
         include: { category: true },
         orderBy: { date: "desc" },
         take: 10,
       }),
-      billingRepo.findMany(userId),
+      billingRepo.findMany(),
     ]);
 
     // Calculate rental profit for the period
@@ -69,7 +71,7 @@ export const dashboardService = {
     };
   },
 
-  getMonthlyTrend: async (userId: string, months: number = 6) => {
+  getMonthlyTrend: async (months: number = 6) => {
     const now = new Date();
     const trends = [];
 
@@ -77,7 +79,7 @@ export const dashboardService = {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const start = startOfMonth(date);
       const end = endOfMonth(date);
-      const stats = await transactionRepo.getStats(userId, start, end);
+      const stats = await transactionRepo.getStats(start, end);
       trends.push({
         month: date.toISOString().slice(0, 7),
         income: stats.totalIncome,

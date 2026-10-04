@@ -1,21 +1,21 @@
 import { transactionRepo } from "@/lib/repositories/transaction.repo";
 import { prisma } from "@/lib/prisma";
+import { getUserId } from "@/lib/request-context";
 
 export const transactionService = {
-  getAll: (userId: string, filters?: { startDate?: string; endDate?: string; type?: string; categoryId?: string }) => {
-    return transactionRepo.findMany(userId, filters);
+  getAll: (filters?: { startDate?: string; endDate?: string; type?: string; categoryId?: string }) => {
+    return transactionRepo.findMany(filters);
   },
 
-  create: (userId: string, data: { amount: number; type: "INCOME" | "EXPENSE"; description?: string; date: string; categoryId: string }) => {
+  create: (data: { amount: number; type: "INCOME" | "EXPENSE"; description?: string; date: string; categoryId: string }) => {
     return transactionRepo.create({
       ...data,
       date: new Date(data.date),
-      userId,
     });
   },
 
-  update: (id: string, userId: string, data: { amount?: number; description?: string; date?: string; categoryId?: string }) => {
-    return transactionRepo.update(id, userId, {
+  update: (id: string, data: { amount?: number; description?: string; date?: string; categoryId?: string }) => {
+    return transactionRepo.update(id, {
       ...data,
       date: data.date ? new Date(data.date) : undefined,
     });
@@ -25,13 +25,13 @@ export const transactionService = {
     return transactionRepo.delete(id);
   },
 
-  getStats: (userId: string, startDate: Date, endDate: Date) => {
-    return transactionRepo.getStats(userId, startDate, endDate);
+  getStats: (startDate: Date, endDate: Date) => {
+    return transactionRepo.getStats(startDate, endDate);
   },
 
-  getByCategory: async (userId: string, startDate: Date, endDate: Date) => {
-    const grouped = await transactionRepo.getByCategory(userId, startDate, endDate);
-    const categories = await prisma.category.findMany({ where: { userId } });
+  getByCategory: async (startDate: Date, endDate: Date) => {
+    const grouped = await transactionRepo.getByCategory(startDate, endDate);
+    const categories = await prisma.category.findMany({ where: { userId: getUserId() } });
     const catMap = new Map(categories.map((c) => [c.id, c]));
 
     return grouped.map((g) => ({

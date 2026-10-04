@@ -5,8 +5,8 @@ export const billingService = {
     return billingRepo.findByPeriod(propertyId, month, year);
   },
 
-  getAllPeriods: (userId: string) => {
-    return billingRepo.findMany(userId);
+  getAllPeriods: () => {
+    return billingRepo.findMany();
   },
 
   updatePeriodSummary: (
@@ -21,7 +21,7 @@ export const billingService = {
   },
 
   unlockPeriod: (periodId: string) => {
-    return billingRepo.updatePeriod(periodId, { isLocked: false, lockedAt: undefined });
+    return billingRepo.updatePeriod(periodId, { isLocked: false, lockedAt: null });
   },
 
   togglePaid: (itemId: string, isPaid: boolean) => {

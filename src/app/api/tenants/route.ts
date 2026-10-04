@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
 import { tenantRepo } from "@/lib/repositories/room.repo";
-import { success, error, requireAuth, handleApiError } from "@/lib/api-utils";
+import { success, error, withUserContext, handleApiError } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = await requireAuth();
-    const propertyId = req.nextUrl.searchParams.get("propertyId") ?? undefined;
-    const data = await tenantRepo.findMany(userId, propertyId);
-    return success(data);
+    return await withUserContext(async () => {
+      const propertyId = req.nextUrl.searchParams.get("propertyId") ?? undefined;
+      const data = await tenantRepo.findMany(propertyId);
+      return success(data);
+    });
   } catch (err) {
     return handleApiError(err);
   }
@@ -15,18 +16,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await requireAuth();
-    const { name, phone, idNumber, isFamily, propertyId } = await req.json();
-    if (!name || !propertyId) return error("Thiếu thông tin người thuê");
-    const data = await tenantRepo.create({
-      name,
-      phone,
-      idNumber,
-      isFamily: isFamily ?? false,
-      propertyId,
-      userId,
+    return await withUserContext(async () => {
+      const { name, phone, idNumber, isFamily, propertyId } = await req.json();
+      if (!name || !propertyId) return error("Thiếu thông tin người thuê");
+      const data = await tenantRepo.create({
+        name,
+        phone,
+        idNumber,
+        isFamily: isFamily ?? false,
+        propertyId,
+      });
+      return success(data, 201);
     });
-    return success(data, 201);
   } catch (err) {
     return handleApiError(err);
   }

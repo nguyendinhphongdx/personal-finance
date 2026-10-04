@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { NotFoundError } from "@/lib/errors";
+import { getUserId } from "@/lib/request-context";
 
 export const billingRepo = {
   findByPeriod: (propertyId: string, month: number, year: number) => {
-    return prisma.billingPeriod.findUnique({
-      where: { month_year_propertyId: { month, year, propertyId } },
+    return prisma.billingPeriod.findFirst({
+      where: { month, year, propertyId, userId: getUserId() },
       include: {
         items: {
           include: { fees: true, room: true },
@@ -13,22 +15,22 @@ export const billingRepo = {
     });
   },
 
-  findMany: (userId: string) => {
+  findMany: () => {
     return prisma.billingPeriod.findMany({
-      where: { userId },
+      where: { userId: getUserId() },
       include: { items: { include: { fees: true } } },
       orderBy: [{ year: "desc" }, { month: "desc" }],
     });
   },
 
-  createPeriod: (data: { month: number; year: number; propertyId: string; userId: string }) => {
+  createPeriod: (data: { month: number; year: number; propertyId: string }) => {
     return prisma.billingPeriod.create({
-      data,
+      data: { ...data, userId: getUserId() },
       include: { items: { include: { fees: true } } },
     });
   },
 
-  updatePeriod: (
+  updatePeriod: async (
     id: string,
     data: {
       actualElectricBill?: number;
@@ -36,9 +38,11 @@ export const billingRepo = {
       totalCollected?: number;
       notes?: string;
       isLocked?: boolean;
-      lockedAt?: Date;
+      lockedAt?: Date | null;
     }
   ) => {
+    const existing = await prisma.billingPeriod.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy kỳ hóa đơn");
     return prisma.billingPeriod.update({
       where: { id },
       data,
@@ -59,6 +63,9 @@ export const billingRepo = {
     fees: { feeName: string; calcMode: "PER_UNIT" | "PER_PERSON" | "FIXED"; unitPrice: number; quantity: number; amount: number }[],
     totalAmount: number
   ) => {
+    const period = await prisma.billingPeriod.findFirst({ where: { id: billingPeriodId, userId: getUserId() } });
+    if (!period) throw new NotFoundError("Không tìm thấy kỳ hóa đơn");
+
     // Find existing item
     const existing = await prisma.billingItem.findFirst({
       where: { billingPeriodId, roomId },
@@ -90,14 +97,20 @@ export const billingRepo = {
     });
   },
 
-  togglePaid: (itemId: string, isPaid: boolean) => {
+  togglePaid: async (itemId: string, isPaid: boolean) => {
+    const existing = await prisma.billingItem.findFirst({
+      where: { id: itemId, billingPeriod: { userId: getUserId() } },
+    });
+    if (!existing) throw new NotFoundError("Không tìm thấy hóa đơn phòng");
     return prisma.billingItem.update({
       where: { id: itemId },
       data: { isPaid, paidAt: isPaid ? new Date() : null },
     });
   },
 
-  deletePeriod: (id: string) => {
+  deletePeriod: async (id: string) => {
+    const existing = await prisma.billingPeriod.findFirst({ where: { id, userId: getUserId() } });
+    if (!existing) throw new NotFoundError("Không tìm thấy kỳ hóa đơn");
     return prisma.billingPeriod.delete({ where: { id } });
   },
 };
