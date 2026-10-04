@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { PWAInstallButton } from "@/components/layout/pwa-install";
+import { AgentChat } from "@/components/shared/agent-chat";
 
 export default function DashboardLayout({
   children,
@@ -23,6 +24,8 @@ export default function DashboardLayout({
       <BottomNav />
       {/* PWA install prompt - hidden when already installed or in standalone mode */}
       <PWAInstallButton />
+      {/* AI assistant: floating button + chat panel */}
+      <AgentChat />
     </SidebarProvider>
   );
 }

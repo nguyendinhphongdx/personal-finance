@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { CategoryCombobox } from "@/components/shared/category-combobox";
 import { useUIStore } from "@/stores/ui.store";
+import { AGENT_DATA_CHANGED } from "@/stores/agent-context.store";
 import { VoiceInput } from "@/components/shared/voice-input";
 import { Numpad } from "@/components/shared/numpad";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -59,6 +60,12 @@ export default function TransactionsPage() {
   }, [fetchTransactions, fetchCategories, filterType]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Reload when the AI assistant changed data
+  useEffect(() => {
+    window.addEventListener(AGENT_DATA_CHANGED, loadData);
+    return () => window.removeEventListener(AGENT_DATA_CHANGED, loadData);
+  }, [loadData]);
 
   const filteredCategories = categories.filter((c) => c.type === form.type);
 

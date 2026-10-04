@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useAgentContextStore, AGENT_DATA_CHANGED } from "@/stores/agent-context.store";
 
 interface MetadataField { label: string; value: string }
 interface Property {
@@ -183,6 +184,25 @@ export default function PropertyDetailPage() {
     Promise.all([loadProperty(), loadRooms(), loadTenants(), loadFeeTypes(), loadBilling()])
       .finally(() => setLoading(false));
   }, [loadProperty, loadRooms, loadTenants, loadFeeTypes, loadBilling]);
+
+  // Reload when the AI assistant changed data
+  useEffect(() => {
+    const reload = () => { loadProperty(); loadRooms(); loadTenants(); loadFeeTypes(); loadBilling(); };
+    window.addEventListener(AGENT_DATA_CHANGED, reload);
+    return () => window.removeEventListener(AGENT_DATA_CHANGED, reload);
+  }, [loadProperty, loadRooms, loadTenants, loadFeeTypes, loadBilling]);
+
+  // Tell the AI assistant what is on screen
+  const setAgentContext = useAgentContextStore((s) => s.setContext);
+  useEffect(() => {
+    setAgentContext({
+      route: `/rental/properties/${propertyId}`,
+      propertyId,
+      propertyName: property?.name,
+      activeTab,
+      ...(activeTab === "billing" && { month, year }),
+    });
+  }, [setAgentContext, propertyId, property?.name, activeTab, month, year]);
 
   useEffect(() => {
     if (billing) {
@@ -1037,6 +1057,7 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
     const name = extraForm.name.trim();
     const amount = parseFloat(extraForm.amount);
     if (!name || !amount) { toast.error("Nhập tên và số tiền"); return; }
+    if (localTotal + amount < 0) { toast.error("Giảm trừ vượt quá tổng tiền phòng"); return; }
     setLocalFees([...localFees, { id: "", feeName: name, calcMode: "FIXED", unitPrice: amount, quantity: 1, amount, isExtra: true }]);
     setExtraForm({ name: "", amount: "" });
   }
@@ -1099,7 +1120,7 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
               <div key={fee.id || idx} className="flex items-center justify-between text-sm py-1 border-t border-dashed">
                 <div className="flex items-center gap-2">
                   <span>{fee.feeName}</span>
-                  {fee.isExtra && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Phát sinh</Badge>}
+                  {fee.isExtra && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{fee.amount < 0 ? "Giảm trừ" : "Phát sinh"}</Badge>}
                 </div>
                 <div className="flex items-center gap-2">
                   {fee.isExtra ? null : fee.calcMode === "PER_UNIT" ? (
@@ -1113,7 +1134,7 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
                       {fee.quantity} {fee.calcMode === "PER_PERSON" ? "người" : ""} × {formatCurrency(fee.unitPrice)}
                     </span>
                   )}
-                  <span className="font-medium min-w-22.5 text-right">{formatCurrency(fee.calcMode === "PER_UNIT" ? fee.unitPrice * (localFees[idx]?.quantity || 0) : fee.amount)}</span>
+                  <span className={`font-medium min-w-22.5 text-right ${fee.amount < 0 ? "text-green-600 dark:text-green-400" : ""}`}>{formatCurrency(fee.calcMode === "PER_UNIT" ? fee.unitPrice * (localFees[idx]?.quantity || 0) : fee.amount)}</span>
                   {fee.isExtra && !isLocked && (
                     <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleRemoveFee(idx)} aria-label="Xóa khoản phát sinh">
                       <Trash2 className="h-3 w-3" />
@@ -1127,9 +1148,9 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
             {!isLocked && (
               <div className="flex items-center gap-2 pt-2 border-t border-dashed">
                 <Input value={extraForm.name} onChange={(e) => setExtraForm({ ...extraForm, name: e.target.value })}
-                  placeholder="Chi phí phát sinh (VD: Sửa vòi nước)" className="h-8 text-sm flex-1 min-w-0" />
+                  placeholder="Phát sinh / giảm trừ (VD: Sửa vòi nước)" className="h-8 text-sm flex-1 min-w-0" />
                 <CurrencyInput value={extraForm.amount} onValueChange={(v) => setExtraForm({ ...extraForm, amount: v })}
-                  placeholder="0" className="h-8 text-sm w-28" />
+                  allowNegative placeholder="0" className="h-8 text-sm w-32" />
                 <Button size="icon" variant="outline" className="h-8 w-8 shrink-0 cursor-pointer" onClick={handleAddExtra} aria-label="Thêm chi phí phát sinh">
                   <Plus className="h-4 w-4" />
                 </Button>

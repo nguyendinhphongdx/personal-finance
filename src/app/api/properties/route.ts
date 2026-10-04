@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { success, error, withUserContext, handleApiError } from "@/lib/api-utils";
+import { propertyService } from "@/lib/services/property.service";
 
 export async function GET() {
   try {
@@ -25,23 +26,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    return await withUserContext(async (userId) => {
+    return await withUserContext(async () => {
       const { name, address, numFloors, monthlyRent, landlordName, landlordPhone, notes } = await req.json();
       if (!name) return error("Vui lòng nhập tên nhà");
 
-      const property = await prisma.property.create({
-        data: { name, address, numFloors: numFloors || 1, monthlyRent, landlordName, landlordPhone, notes, userId },
-      });
-
-      // Seed default fee types for this property
-      await prisma.feeType.createMany({
-        data: [
-          { name: "Tiền điện", unit: "kWh", calcMode: "PER_UNIT", defaultPrice: 4000, sortOrder: 1, isDefault: true, propertyId: property.id, userId },
-          { name: "Tiền nước", unit: "người", calcMode: "PER_PERSON", defaultPrice: 50000, sortOrder: 2, isDefault: true, propertyId: property.id, userId },
-          { name: "Tiền mạng", calcMode: "FIXED", defaultPrice: 50000, sortOrder: 3, isDefault: true, propertyId: property.id, userId },
-        ],
-      });
-
+      const property = await propertyService.create({ name, address, numFloors, monthlyRent, landlordName, landlordPhone, notes });
       return success(property, 201);
     });
   } catch (err) {

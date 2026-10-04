@@ -252,3 +252,19 @@ enum TransactionType {
   INCOME
   EXPENSE
 }
+
+// AI assistant chat history. Only the visible turn is stored: the user's text and the
+// assistant's final reply plus a summary of the tools it ran. Raw tool messages are not
+// replayed to the model, and image bytes are never persisted.
+model AgentMessage {
+  id          String   @id @default(cuid())
+  userId      String
+  role        String // "user" | "assistant"
+  content     String
+  actions     Json? // assistant only: [{ tool, args, ok, result }]
+  attachments Json? // user only: [{ mimeType, size }]
+  context     Json? // user only: AgentContext snapshot at send time
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

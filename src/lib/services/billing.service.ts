@@ -1,8 +1,30 @@
 import { prisma } from "@/lib/prisma";
 import { billingRepo } from "@/lib/repositories/billing.repo";
 import { assertOwnsProperty } from "@/lib/repositories/ownership";
-import { BadRequestError } from "@/lib/errors";
+import { BadRequestError, NotFoundError } from "@/lib/errors";
 import { getUserId } from "@/lib/request-context";
+
+const CALC_MODES = ["PER_UNIT", "PER_PERSON", "FIXED"] as const;
+type CalcMode = (typeof CALC_MODES)[number];
+
+export interface FeeInput {
+  feeName: string;
+  calcMode: string;
+  unitPrice: number;
+  quantity: number;
+  isExtra?: boolean;
+}
+
+/** Load a billing item owned by the current user whose period is still editable. */
+async function getEditableItem(itemId: string) {
+  const item = await prisma.billingItem.findFirst({
+    where: { id: itemId, billingPeriod: { userId: getUserId() } },
+    include: { billingPeriod: true, fees: true },
+  });
+  if (!item) throw new NotFoundError("Không tìm thấy hóa đơn phòng");
+  if (item.billingPeriod.isLocked) throw new BadRequestError("Kỳ hóa đơn đã khóa, không thể chỉnh sửa");
+  return item;
+}
 
 const periodInclude = {
   items: {
@@ -111,5 +133,55 @@ export const billingService = {
 
   deletePeriod: (periodId: string) => {
     return billingRepo.deletePeriod(periodId);
+  },
+
+  getEditableItem,
+
+  /**
+   * Replace the whole fee list of a room's bill (fees from FeeTypes + ad-hoc extras)
+   * and recompute its total.
+   */
+  updateItemFees: async (itemId: string, fees: FeeInput[]) => {
+    const item = await getEditableItem(itemId);
+
+    const feeData = fees.map((f) => {
+      const feeName = typeof f.feeName === "string" ? f.feeName.trim() : "";
+      const unitPrice = Number(f.unitPrice);
+      const quantity = Number(f.quantity);
+      if (!feeName) throw new BadRequestError("Tên khoản phí không được để trống");
+      if (!CALC_MODES.includes(f.calcMode as CalcMode)) throw new BadRequestError("Cách tính không hợp lệ");
+      if (!Number.isFinite(unitPrice) || !Number.isFinite(quantity) || quantity < 0) throw new BadRequestError("Số tiền không hợp lệ");
+      return {
+        billingItemId: itemId,
+        feeName,
+        calcMode: f.calcMode as CalcMode,
+        unitPrice,
+        quantity,
+        amount: unitPrice * quantity,
+        isExtra: f.isExtra === true,
+      };
+    });
+
+    const totalAmount = item.snapshotPrice + feeData.reduce((s, f) => s + f.amount, 0);
+    if (totalAmount < 0) throw new BadRequestError("Giảm trừ vượt quá tổng tiền phòng");
+
+    return prisma.$transaction(async (tx) => {
+      await tx.billingItemFee.deleteMany({ where: { billingItemId: itemId } });
+      await tx.billingItemFee.createMany({ data: feeData });
+      return tx.billingItem.update({
+        where: { id: itemId },
+        data: { totalAmount },
+        include: { fees: true },
+      });
+    });
+  },
+
+  setItemPaid: async (itemId: string, isPaid: boolean) => {
+    await getEditableItem(itemId);
+    return prisma.billingItem.update({
+      where: { id: itemId },
+      data: { isPaid, paidAt: isPaid ? new Date() : null },
+      include: { fees: true },
+    });
   },
 };

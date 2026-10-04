@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { success, error, requireAuth, handleApiError } from "@/lib/api-utils";
+import { getDefaultModel } from "@/lib/agent/model";
 
 const SYSTEM_PROMPT = `Bạn là trợ lý tài chính. Nhiệm vụ: phân tích câu nói tiếng Việt và trích xuất thông tin giao dịch.
 
@@ -114,14 +115,5 @@ export async function POST(req: NextRequest) {
     return success(result);
   } catch (err) {
     return handleApiError(err);
-  }
-}
-
-function getDefaultModel(provider: string): string {
-  switch (provider) {
-    case "openai": return "gpt-4o-mini";
-    case "google": return "gemini-2.0-flash";
-    case "anthropic": return "claude-haiku-4-5-20251001";
-    default: return "";
   }
 }

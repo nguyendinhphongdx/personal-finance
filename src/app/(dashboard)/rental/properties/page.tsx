@@ -15,6 +15,7 @@ import { Plus, Edit2, Trash2, Home, MapPin, Building2, DoorOpen, Users, Loader2,
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
+import { AGENT_DATA_CHANGED } from "@/stores/agent-context.store";
 
 export default function PropertiesPage() {
   const { properties, fetchProperties } = useRentalStore();
@@ -28,6 +29,13 @@ export default function PropertiesPage() {
 
   useEffect(() => {
     fetchProperties().then(() => setLoading(false));
+  }, [fetchProperties]);
+
+  // Reload when the AI assistant changed data
+  useEffect(() => {
+    const reload = () => { fetchProperties(); };
+    window.addEventListener(AGENT_DATA_CHANGED, reload);
+    return () => window.removeEventListener(AGENT_DATA_CHANGED, reload);
   }, [fetchProperties]);
 
   async function handleSubmit(e: React.FormEvent) {
