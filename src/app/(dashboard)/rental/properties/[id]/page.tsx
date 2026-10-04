@@ -45,16 +45,25 @@ interface Tenant {
 interface FeeType {
   id: string; name: string; unit?: string; calcMode: string; defaultPrice: number;
   isActive: boolean; sortOrder: number; propertyId: string;
+  rooms: { roomId: string }[]; // empty = applies to all rooms
 }
 interface BillingPeriod {
   id: string; month: number; year: number; isLocked: boolean;
   actualElectricBill?: number; landlordPayment?: number; totalCollected?: number; notes?: string;
   items: BillingItem[];
 }
+interface BillingFee {
+  id: string; feeName: string; calcMode: string; unitPrice: number; quantity: number; amount: number;
+  isExtra: boolean; // ad-hoc charge added for this month only
+}
+type FeeInput = Pick<BillingFee, "feeName" | "calcMode" | "unitPrice" | "quantity" | "isExtra">;
+
+const EMPTY_FEE_FORM = { name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0", scope: "all" as "all" | "some", roomIds: [] as string[] };
+
 interface BillingItem {
   id: string; snapshotRoomName: string; snapshotFloor: number; snapshotPrice: number;
   snapshotTenants: { name: string; isFamily: boolean }[]; snapshotNumPeople: number;
-  fees: { id: string; feeName: string; calcMode: string; unitPrice: number; quantity: number; amount: number }[];
+  fees: BillingFee[];
   totalAmount: number; isPaid: boolean;
 }
 
@@ -131,7 +140,7 @@ export default function PropertyDetailPage() {
   const [roomForm, setRoomForm] = useState({ name: "", floor: "", price: "" });
   const [tenantForm, setTenantForm] = useState({ name: "", phone: "", idNumber: "", isFamily: false });
   const [assignForm, setAssignForm] = useState<{ tenantIds: string[]; moveInDate: string }>({ tenantIds: [], moveInDate: new Date().toISOString().split("T")[0] });
-  const [feeForm, setFeeForm] = useState({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" });
+  const [feeForm, setFeeForm] = useState(EMPTY_FEE_FORM);
   const [summaryForm, setSummaryForm] = useState({ actualElectricBill: "", landlordPayment: "", notes: "" });
   const [billPreview, setBillPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -314,19 +323,24 @@ export default function PropertyDetailPage() {
   }
 
   // ==================== FEE TYPES ====================
+  function roomNames(feeRooms: { roomId: string }[]) {
+    return feeRooms.map((fr) => rooms.find((r) => r.id === fr.roomId)?.name).filter(Boolean).join(", ");
+  }
+
   async function handleFeeSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (feeForm.scope === "some" && feeForm.roomIds.length === 0) { toast.error("Chọn ít nhất 1 phòng"); return; }
     setSubmitting(true);
     try {
       const url = editFeeId ? `/api/fee-types/${editFeeId}` : "/api/fee-types";
       const method = editFeeId ? "PUT" : "POST";
       const res = await fetch(url, {
         method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: feeForm.name, unit: feeForm.unit || null, calcMode: feeForm.calcMode, defaultPrice: parseFloat(feeForm.defaultPrice), sortOrder: parseInt(feeForm.sortOrder), propertyId }),
+        body: JSON.stringify({ name: feeForm.name, unit: feeForm.unit || null, calcMode: feeForm.calcMode, defaultPrice: parseFloat(feeForm.defaultPrice), sortOrder: parseInt(feeForm.sortOrder), propertyId, roomIds: feeForm.scope === "all" ? [] : feeForm.roomIds }),
       });
       if (res.ok) {
         toast.success(editFeeId ? "Cập nhật thành công" : "Thêm loại phí thành công");
-        setFeeDialog(false); setFeeForm({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" }); setEditFeeId(null);
+        setFeeDialog(false); setFeeForm(EMPTY_FEE_FORM); setEditFeeId(null);
         loadFeeTypes();
       } else { const d = await res.json(); toast.error(d.error); }
     } finally { setSubmitting(false); }
@@ -411,14 +425,16 @@ export default function PropertyDetailPage() {
     } finally { setSubmitting(false); }
   }
 
-  async function handleUpdateFees(itemId: string, fees: { feeName: string; calcMode: string; unitPrice: number; quantity: number }[]) {
+  async function handleUpdateFees(itemId: string, fees: FeeInput[]) {
     if (billing?.isLocked) { toast.error("Kỳ hóa đơn đã khóa"); return; }
     setSubmitting(true);
     try {
-      await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
+      const res = await fetch(`/api/billing/${billing!.id}/items/${itemId}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fees }),
       });
+      if (res.ok) toast.success("Đã lưu chi phí");
+      else { const d = await res.json(); toast.error(d.error); }
       loadBilling();
     } finally { setSubmitting(false); }
   }
@@ -772,7 +788,7 @@ export default function PropertyDetailPage() {
         <TabsContent value="fees" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{feeTypes.length} loại phí <InfoTooltip content="Cấu hình phí riêng cho nhà này" /></p>
-            <Dialog open={feeDialog} onOpenChange={(o) => { setFeeDialog(o); if (!o) { setEditFeeId(null); setFeeForm({ name: "", unit: "", calcMode: "FIXED", defaultPrice: "", sortOrder: "0" }); } }}>
+            <Dialog open={feeDialog} onOpenChange={(o) => { setFeeDialog(o); if (!o) { setEditFeeId(null); setFeeForm(EMPTY_FEE_FORM); } }}>
               <DialogTrigger>
                 <Button className="cursor-pointer"><Plus className="h-4 w-4 mr-2" /> Thêm loại phí</Button>
               </DialogTrigger>
@@ -795,6 +811,32 @@ export default function PropertyDetailPage() {
                     <div className="space-y-2"><Label>Đơn giá</Label><CurrencyInput value={feeForm.defaultPrice} onValueChange={(v) => setFeeForm({ ...feeForm, defaultPrice: v })} placeholder="4.000" required /></div>
                     <div className="space-y-2"><Label>Đơn vị</Label><Input value={feeForm.unit} onChange={(e) => setFeeForm({ ...feeForm, unit: e.target.value })} placeholder="kWh" /></div>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Áp dụng cho <InfoTooltip content="Chỉ các phòng được chọn mới có khoản phí này khi tạo hóa đơn tháng mới" /></Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" variant={feeForm.scope === "all" ? "default" : "outline"} className="cursor-pointer"
+                        onClick={() => setFeeForm({ ...feeForm, scope: "all" })}>Tất cả phòng</Button>
+                      <Button type="button" variant={feeForm.scope === "some" ? "default" : "outline"} className="cursor-pointer"
+                        onClick={() => setFeeForm({ ...feeForm, scope: "some" })}>Chọn phòng</Button>
+                    </div>
+                    {feeForm.scope === "some" && (
+                      rooms.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Nhà chưa có phòng nào</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {rooms.map((r) => {
+                            const selected = feeForm.roomIds.includes(r.id);
+                            return (
+                              <Button key={r.id} type="button" size="sm" variant={selected ? "default" : "outline"} className="cursor-pointer"
+                                onClick={() => setFeeForm({ ...feeForm, roomIds: selected ? feeForm.roomIds.filter((id) => id !== r.id) : [...feeForm.roomIds, r.id] })}>
+                                {selected && <CheckCircle2 className="h-3 w-3 mr-1" />}{r.name}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      )
+                    )}
+                  </div>
                   <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>{submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{editFeeId ? "Cập nhật" : "Thêm"}</Button>
                 </form>
               </DialogContent>
@@ -806,7 +848,7 @@ export default function PropertyDetailPage() {
           ) : (
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Tên phí</TableHead><TableHead>Cách tính</TableHead><TableHead className="text-right">Đơn giá</TableHead><TableHead>Đơn vị</TableHead><TableHead className="w-20"></TableHead>
+                <TableHead>Tên phí</TableHead><TableHead>Cách tính</TableHead><TableHead className="text-right">Đơn giá</TableHead><TableHead>Đơn vị</TableHead><TableHead>Áp dụng</TableHead><TableHead className="w-20"></TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {feeTypes.map((ft) => (
@@ -816,8 +858,15 @@ export default function PropertyDetailPage() {
                     <TableCell className="text-right font-mono">{formatCurrency(ft.defaultPrice)}</TableCell>
                     <TableCell className="text-muted-foreground">{ft.unit || "—"}</TableCell>
                     <TableCell>
+                      {ft.rooms.length === 0 ? (
+                        <span className="text-muted-foreground">Tất cả</span>
+                      ) : (
+                        <span title={roomNames(ft.rooms)}>{ft.rooms.length} phòng <span className="text-xs text-muted-foreground hidden md:inline">({roomNames(ft.rooms)})</span></span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => { setFeeForm({ name: ft.name, unit: ft.unit || "", calcMode: ft.calcMode, defaultPrice: ft.defaultPrice.toString(), sortOrder: ft.sortOrder.toString() }); setEditFeeId(ft.id); setFeeDialog(true); }}><Edit2 className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer" onClick={() => { setFeeForm({ name: ft.name, unit: ft.unit || "", calcMode: ft.calcMode, defaultPrice: ft.defaultPrice.toString(), sortOrder: ft.sortOrder.toString(), scope: ft.rooms.length > 0 ? "some" : "all", roomIds: ft.rooms.map((r) => r.roomId) }); setEditFeeId(ft.id); setFeeDialog(true); }}><Edit2 className="h-3 w-3" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleDeleteFee(ft.id)}><Trash2 className="h-3 w-3" /></Button>
                       </div>
                     </TableCell>
@@ -965,12 +1014,13 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
   item: BillingItem; isLocked: boolean;
   propertyName: string; billingMonth: number; billingYear: number;
   onTogglePaid: (isPaid: boolean) => void;
-  onUpdateFees: (fees: { feeName: string; calcMode: string; unitPrice: number; quantity: number }[]) => void;
+  onUpdateFees: (fees: FeeInput[]) => void;
 }) {
   const feesKey = JSON.stringify(item.fees);
   const [localFees, setLocalFees] = useState(() => item.fees.map((f) => ({ ...f })));
   const [prevFeesKey, setPrevFeesKey] = useState(feesKey);
   const [expanded, setExpanded] = useState(false);
+  const [extraForm, setExtraForm] = useState({ name: "", amount: "" });
   if (feesKey !== prevFeesKey) {
     setPrevFeesKey(feesKey);
     setLocalFees(item.fees.map((f) => ({ ...f })));
@@ -983,8 +1033,21 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
     setLocalFees(updated);
   }
 
+  function handleAddExtra() {
+    const name = extraForm.name.trim();
+    const amount = parseFloat(extraForm.amount);
+    if (!name || !amount) { toast.error("Nhập tên và số tiền"); return; }
+    setLocalFees([...localFees, { id: "", feeName: name, calcMode: "FIXED", unitPrice: amount, quantity: 1, amount, isExtra: true }]);
+    setExtraForm({ name: "", amount: "" });
+  }
+
+  function handleRemoveFee(idx: number) {
+    setLocalFees(localFees.filter((_, i) => i !== idx));
+  }
+
+  const toInput = (f: BillingFee): FeeInput => ({ feeName: f.feeName, calcMode: f.calcMode, unitPrice: f.unitPrice, quantity: f.quantity, isExtra: f.isExtra });
   const localTotal = item.snapshotPrice + localFees.reduce((s, f) => s + f.amount, 0);
-  const hasChanges = JSON.stringify(localFees.map((f) => f.quantity)) !== JSON.stringify(item.fees.map((f) => f.quantity));
+  const hasChanges = JSON.stringify(localFees.map(toInput)) !== JSON.stringify(item.fees.map(toInput));
 
   return (
     <Card className={`transition-all duration-200 ${item.isPaid ? "border-green-500/30 bg-green-500/5" : ""}`}>
@@ -1036,9 +1099,10 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
               <div key={fee.id || idx} className="flex items-center justify-between text-sm py-1 border-t border-dashed">
                 <div className="flex items-center gap-2">
                   <span>{fee.feeName}</span>
+                  {fee.isExtra && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Phát sinh</Badge>}
                 </div>
                 <div className="flex items-center gap-2">
-                  {fee.calcMode === "PER_UNIT" ? (
+                  {fee.isExtra ? null : fee.calcMode === "PER_UNIT" ? (
                     <>
                       <Input type="number" className="w-16 h-7 text-right text-sm" value={fee.quantity || ""}
                         onChange={(e) => handleQtyChange(idx, e.target.value)} disabled={isLocked} placeholder="0" />
@@ -1050,9 +1114,27 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
                     </span>
                   )}
                   <span className="font-medium min-w-22.5 text-right">{formatCurrency(fee.calcMode === "PER_UNIT" ? fee.unitPrice * (localFees[idx]?.quantity || 0) : fee.amount)}</span>
+                  {fee.isExtra && !isLocked && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 cursor-pointer text-destructive" onClick={() => handleRemoveFee(idx)} aria-label="Xóa khoản phát sinh">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
+
+            {/* Add an ad-hoc charge for this room, this month only */}
+            {!isLocked && (
+              <div className="flex items-center gap-2 pt-2 border-t border-dashed">
+                <Input value={extraForm.name} onChange={(e) => setExtraForm({ ...extraForm, name: e.target.value })}
+                  placeholder="Chi phí phát sinh (VD: Sửa vòi nước)" className="h-8 text-sm flex-1 min-w-0" />
+                <CurrencyInput value={extraForm.amount} onValueChange={(v) => setExtraForm({ ...extraForm, amount: v })}
+                  placeholder="0" className="h-8 text-sm w-28" />
+                <Button size="icon" variant="outline" className="h-8 w-8 shrink-0 cursor-pointer" onClick={handleAddExtra} aria-label="Thêm chi phí phát sinh">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <Separator className="border-2" />
@@ -1073,7 +1155,7 @@ function BillingItemCard({ item, isLocked, propertyName, billingMonth, billingYe
               )}
             </div>
             {hasChanges && !isLocked && (
-              <Button size="sm" onClick={() => onUpdateFees(localFees.map((f) => ({ feeName: f.feeName, calcMode: f.calcMode, unitPrice: f.unitPrice, quantity: f.quantity })))} className="cursor-pointer">Lưu thay đổi</Button>
+              <Button size="sm" onClick={() => onUpdateFees(localFees.map(toInput))} className="cursor-pointer">Lưu thay đổi</Button>
             )}
           </div>
         </CardContent>

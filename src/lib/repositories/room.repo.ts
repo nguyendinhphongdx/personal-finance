@@ -157,23 +157,58 @@ export const contractRepo = {
   },
 };
 
+type CalcMode = "PER_UNIT" | "PER_PERSON" | "FIXED";
+
+// roomIds must be rooms of the same property owned by the current user.
+async function assertRoomsInProperty(propertyId: string, roomIds: string[]) {
+  if (roomIds.length === 0) return;
+  const count = await prisma.room.count({ where: { id: { in: roomIds }, propertyId, userId: getUserId() } });
+  if (count !== new Set(roomIds).size) throw new BadRequestError("Phòng không thuộc nhà này");
+}
+
+const feeTypeInclude = { rooms: { select: { roomId: true } } } as const;
+
 export const feeTypeRepo = {
   findMany: (propertyId: string) => {
     return prisma.feeType.findMany({
       where: { propertyId, userId: getUserId(), isActive: true },
+      include: feeTypeInclude,
       orderBy: { sortOrder: "asc" },
     });
   },
 
-  create: async (data: { name: string; unit?: string; calcMode: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice: number; sortOrder?: number; propertyId: string }) => {
+  /** `roomIds` empty = applies to every room of the property. */
+  create: async (
+    data: { name: string; unit?: string | null; calcMode: CalcMode; defaultPrice: number; sortOrder?: number; propertyId: string },
+    roomIds: string[] = []
+  ) => {
     await assertOwnsProperty(data.propertyId);
-    return prisma.feeType.create({ data: { ...data, userId: getUserId() } });
+    await assertRoomsInProperty(data.propertyId, roomIds);
+    return prisma.feeType.create({
+      data: { ...data, userId: getUserId(), rooms: { create: [...new Set(roomIds)].map((roomId) => ({ roomId })) } },
+      include: feeTypeInclude,
+    });
   },
 
-  update: async (id: string, data: { name?: string; unit?: string; calcMode?: "PER_UNIT" | "PER_PERSON" | "FIXED"; defaultPrice?: number; sortOrder?: number; isActive?: boolean }) => {
+  /** `roomIds` undefined = keep current scope; empty array = reset to all rooms. */
+  update: async (
+    id: string,
+    data: { name?: string; unit?: string | null; calcMode?: CalcMode; defaultPrice?: number; sortOrder?: number; isActive?: boolean },
+    roomIds?: string[]
+  ) => {
     const existing = await prisma.feeType.findFirst({ where: { id, userId: getUserId() } });
     if (!existing) throw new NotFoundError("Không tìm thấy loại phí");
-    return prisma.feeType.update({ where: { id }, data });
+    if (roomIds) await assertRoomsInProperty(existing.propertyId, roomIds);
+    return prisma.feeType.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(roomIds && {
+          rooms: { deleteMany: {}, create: [...new Set(roomIds)].map((roomId) => ({ roomId })) },
+        }),
+      },
+      include: feeTypeInclude,
+    });
   },
 
   delete: async (id: string) => {

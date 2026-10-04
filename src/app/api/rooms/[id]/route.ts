@@ -6,8 +6,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     return await withUserContext(async () => {
       const { id } = await params;
-      const body = await req.json();
-      const data = await roomRepo.update(id, body);
+      const { name, floor, price, isActive } = await req.json();
+      const data = await roomRepo.update(id, { name, floor, price, isActive });
       return success(data);
     });
   } catch (err) {

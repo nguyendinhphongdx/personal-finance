@@ -9,22 +9,22 @@ datasource db {
 
 // ==================== AUTH ====================
 model User {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   name      String
-  email     String   @unique
+  email     String        @unique
   password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   settings  UserSettings?
 }
 
 model UserSettings {
-  id           String  @id @default(cuid())
-  userId       String  @unique
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  aiProvider   String? // "openai" | "google" | "anthropic"
-  aiModel      String? // "gpt-4o-mini" | "gemini-flash" | etc.
-  aiApiKey     String? // encrypted API key
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiProvider String? // "openai" | "google" | "anthropic"
+  aiModel    String? // "gpt-4o-mini" | "gemini-flash" | etc.
+  aiApiKey   String? // encrypted API key
 }
 
 // ==================== THU CHI ====================
@@ -74,14 +74,14 @@ model Budget {
 // ==================== RENTAL ====================
 model Property {
   id             String          @id @default(cuid())
-  name           String          // "Nhà Quận 7", "Nhà Bình Thạnh"
+  name           String // "Nhà Quận 7", "Nhà Bình Thạnh"
   address        String?
   numFloors      Int             @default(1)
-  monthlyRent    Float?          // Tiền thuê gửi chủ nhà mỗi tháng
+  monthlyRent    Float? // Tiền thuê gửi chủ nhà mỗi tháng
   landlordName   String?
   landlordPhone  String?
   notes          String?
-  metadata       Json?           // [{label, value}] custom fields
+  metadata       Json? // [{label, value}] custom fields
   isActive       Boolean         @default(true)
   userId         String
   createdAt      DateTime        @default(now())
@@ -106,6 +106,7 @@ model Room {
   assignments  RoomAssignment[]
   contracts    Contract[]
   billingItems BillingItem[]
+  feeTypes     FeeTypeRoom[]
 
   @@index([propertyId])
   @@index([userId])
@@ -160,21 +161,33 @@ model Contract {
 
 // ==================== FEE CONFIG (per property) ====================
 model FeeType {
-  id           String   @id @default(cuid())
+  id           String        @id @default(cuid())
   name         String
   unit         String?
   calcMode     CalcMode
   defaultPrice Float
-  isDefault    Boolean  @default(false)
-  isActive     Boolean  @default(true)
-  sortOrder    Int      @default(0)
+  isDefault    Boolean       @default(false)
+  isActive     Boolean       @default(true)
+  sortOrder    Int           @default(0)
   propertyId   String
-  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   userId       String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime      @default(now())
+  rooms        FeeTypeRoom[] // empty = applies to every room of the property
 
   @@index([propertyId])
   @@index([userId])
+}
+
+// Restricts a FeeType to specific rooms. A FeeType with no rows here applies to all rooms.
+model FeeTypeRoom {
+  feeTypeId String
+  feeType   FeeType @relation(fields: [feeTypeId], references: [id], onDelete: Cascade)
+  roomId    String
+  room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([feeTypeId, roomId])
+  @@index([roomId])
 }
 
 enum CalcMode {
@@ -232,6 +245,7 @@ model BillingItemFee {
   unitPrice     Float
   quantity      Float
   amount        Float
+  isExtra       Boolean     @default(false) // ad-hoc charge added to this room's bill, not from a FeeType
 }
 
 enum TransactionType {

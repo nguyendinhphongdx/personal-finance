@@ -14,7 +14,7 @@ export const transactionService = {
     });
   },
 
-  update: (id: string, data: { amount?: number; description?: string; date?: string; categoryId?: string }) => {
+  update: (id: string, data: { amount?: number; type?: "INCOME" | "EXPENSE"; description?: string; date?: string; categoryId?: string }) => {
     return transactionRepo.update(id, {
       ...data,
       date: data.date ? new Date(data.date) : undefined,

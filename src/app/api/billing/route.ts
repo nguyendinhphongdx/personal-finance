@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { success, error, withUserContext, handleApiError, NotFoundError } from "@/lib/api-utils";
+import { success, error, withUserContext, handleApiError } from "@/lib/api-utils";
+import { billingService } from "@/lib/services/billing.service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -40,86 +41,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    return await withUserContext(async (userId) => {
+    return await withUserContext(async () => {
       const { month, year, propertyId } = await req.json();
       if (!month || !year || !propertyId) return error("Thiếu thông tin");
-
-      const property = await prisma.property.findFirst({ where: { id: propertyId, userId } });
-      if (!property) throw new NotFoundError("Không tìm thấy nhà");
-
-      // Create or get period
-      let period = await prisma.billingPeriod.findFirst({
-        where: { month, year, propertyId, userId },
-      });
-
-      if (period?.isLocked) return error("Kỳ hóa đơn đã khóa, không thể tạo thêm");
-
-      if (!period) {
-        period = await prisma.billingPeriod.create({
-          data: { month, year, propertyId, userId },
-        });
-      }
-
-      // Auto-generate billing items from rooms
-      const rooms = await prisma.room.findMany({
-        where: { propertyId, userId, isActive: true },
-        include: { assignments: { where: { moveOutDate: null }, include: { tenant: true } } },
-      });
-
-      const feeTypes = await prisma.feeType.findMany({
-        where: { propertyId, userId, isActive: true },
-        orderBy: { sortOrder: "asc" },
-      });
-
-      for (const room of rooms) {
-        if (room.assignments.length === 0) continue;
-
-        const existing = await prisma.billingItem.findFirst({
-          where: { billingPeriodId: period.id, roomId: room.id },
-        });
-        if (existing) continue; // Don't overwrite existing items
-
-        const numPeople = room.assignments.length;
-        const fees = feeTypes.map((ft) => {
-          let quantity = 1;
-          if (ft.calcMode === "PER_PERSON") quantity = numPeople;
-          if (ft.calcMode === "PER_UNIT") quantity = 0;
-          return {
-            feeName: ft.name,
-            calcMode: ft.calcMode,
-            unitPrice: ft.defaultPrice,
-            quantity,
-            amount: ft.calcMode === "PER_UNIT" ? 0 : quantity * ft.defaultPrice,
-          };
-        });
-
-        const totalFees = fees.reduce((s, f) => s + f.amount, 0);
-
-        await prisma.billingItem.create({
-          data: {
-            billingPeriodId: period.id,
-            roomId: room.id,
-            snapshotRoomName: room.name,
-            snapshotFloor: room.floor,
-            snapshotPrice: room.price,
-            snapshotTenants: room.assignments.map((a) => ({ name: a.tenant.name, isFamily: a.tenant.isFamily })),
-            snapshotNumPeople: numPeople,
-            totalAmount: room.price + totalFees,
-            fees: { create: fees },
-          },
-        });
-      }
-
-      // Re-fetch full period
-      const data = await prisma.billingPeriod.findUnique({
-        where: { id: period.id },
-        include: {
-          items: {
-            include: { fees: true, room: true },
-            orderBy: [{ snapshotFloor: "asc" }, { snapshotRoomName: "asc" }],
-          },
-        },
-      });
+      const data = await billingService.generatePeriod(propertyId, month, year);
       return success(data, 201);
     });
   } catch (err) {

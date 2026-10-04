@@ -32,7 +32,7 @@ export const transactionRepo = {
     });
   },
 
-  update: async (id: string, data: { amount?: number; description?: string; date?: Date; categoryId?: string }) => {
+  update: async (id: string, data: { amount?: number; type?: "INCOME" | "EXPENSE"; description?: string; date?: Date; categoryId?: string }) => {
     const existing = await prisma.transaction.findFirst({ where: { id, userId: getUserId() } });
     if (!existing) throw new NotFoundError("Không tìm thấy giao dịch");
     if (data.categoryId) await assertOwnsCategory(data.categoryId);

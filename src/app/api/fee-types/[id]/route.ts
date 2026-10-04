@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
 import { feeTypeRepo } from "@/lib/repositories/room.repo";
-import { success, withUserContext, handleApiError } from "@/lib/api-utils";
+import { success, error, withUserContext, handleApiError } from "@/lib/api-utils";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     return await withUserContext(async () => {
       const { id } = await params;
-      const body = await req.json();
-      const data = await feeTypeRepo.update(id, body);
+      const { name, unit, calcMode, defaultPrice, sortOrder, roomIds } = await req.json();
+      if (roomIds !== undefined && !Array.isArray(roomIds)) return error("Danh sách phòng không hợp lệ");
+      const data = await feeTypeRepo.update(id, { name, unit, calcMode, defaultPrice, sortOrder }, roomIds);
       return success(data);
     });
   } catch (err) {

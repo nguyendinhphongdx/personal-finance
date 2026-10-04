@@ -6,8 +6,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     return await withUserContext(async () => {
       const { id } = await params;
-      const body = await req.json();
-      const data = await transactionService.update(id, body);
+      const { amount, type, description, date, categoryId } = await req.json();
+      const data = await transactionService.update(id, { amount, type, description, date, categoryId });
       return success(data);
     });
   } catch (err) {

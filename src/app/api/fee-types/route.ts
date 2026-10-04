@@ -1,17 +1,13 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { feeTypeRepo } from "@/lib/repositories/room.repo";
 import { success, error, withUserContext, handleApiError } from "@/lib/api-utils";
-import { assertOwnsProperty } from "@/lib/repositories/ownership";
 
 export async function GET(req: NextRequest) {
   try {
-    return await withUserContext(async (userId) => {
+    return await withUserContext(async () => {
       const propertyId = req.nextUrl.searchParams.get("propertyId");
       if (!propertyId) return error("Thiếu propertyId");
-      const data = await prisma.feeType.findMany({
-        where: { userId, propertyId, isActive: true },
-        orderBy: { sortOrder: "asc" },
-      });
+      const data = await feeTypeRepo.findMany(propertyId);
       return success(data);
     });
   } catch (err) {
@@ -21,13 +17,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    return await withUserContext(async (userId) => {
-      const { name, unit, calcMode, defaultPrice, sortOrder, propertyId } = await req.json();
+    return await withUserContext(async () => {
+      const { name, unit, calcMode, defaultPrice, sortOrder, propertyId, roomIds } = await req.json();
       if (!name || !calcMode || defaultPrice == null || !propertyId) return error("Thiếu thông tin loại phí");
-      await assertOwnsProperty(propertyId);
-      const data = await prisma.feeType.create({
-        data: { name, unit, calcMode, defaultPrice, sortOrder, propertyId, userId },
-      });
+      if (roomIds !== undefined && !Array.isArray(roomIds)) return error("Danh sách phòng không hợp lệ");
+      const data = await feeTypeRepo.create({ name, unit, calcMode, defaultPrice, sortOrder, propertyId }, roomIds);
       return success(data, 201);
     });
   } catch (err) {
