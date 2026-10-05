@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { success, error, requireAuth, handleApiError } from "@/lib/api-utils";
-import { getDefaultModel } from "@/lib/agent/model";
+import { getDefaultModel, supportsZeroTemperature } from "@/lib/ai-models";
 
 const SYSTEM_PROMPT = `Bạn là trợ lý tài chính. Nhiệm vụ: phân tích câu nói tiếng Việt và trích xuất thông tin giao dịch.
 
@@ -32,7 +32,7 @@ async function callOpenAI(apiKey: string, model: string, text: string) {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: text },
       ],
-      temperature: 0,
+      ...(supportsZeroTemperature("openai", model) && { temperature: 0 }),
       response_format: { type: "json_object" },
     }),
   });
@@ -49,7 +49,10 @@ async function callGoogle(apiKey: string, model: string, text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\nInput: ${text}` }] }],
-        generationConfig: { temperature: 0, responseMimeType: "application/json" },
+        generationConfig: {
+          ...(supportsZeroTemperature("google", model) && { temperature: 0 }),
+          responseMimeType: "application/json",
+        },
       }),
     }
   );

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { success, error, requireAuth, handleApiError } from "@/lib/api-utils";
+import { getDefaultModel } from "@/lib/ai-models";
 
 export async function POST() {
   try {
@@ -25,7 +26,7 @@ export async function POST() {
       }
 
       case "google": {
-        const model = aiModel || "gemini-2.0-flash";
+        const model = aiModel || getDefaultModel("google");
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${aiApiKey}`
         );
@@ -45,7 +46,7 @@ export async function POST() {
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: aiModel || "claude-haiku-4-5-20251001",
+            model: aiModel || getDefaultModel("anthropic"),
             max_tokens: 1,
             messages: [{ role: "user", content: "hi" }],
           }),

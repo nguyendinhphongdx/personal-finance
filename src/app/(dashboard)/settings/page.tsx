@@ -9,46 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
-import { Settings, Bot, User, Loader2, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { Settings, Bot, User, Loader2, CheckCircle2, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { AI_PROVIDERS, type AIModelOption } from "@/lib/ai-models";
 
-const AI_PROVIDERS = [
-  {
-    id: "google",
-    name: "Google AI",
-    description: "Gemini models - có free tier",
-    models: [
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", tag: "Nhanh, rẻ" },
-      { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite", tag: "Rẻ nhất" },
-      { id: "gemini-2.5-flash-preview-05-20", name: "Gemini 2.5 Flash", tag: "Mới nhất" },
-    ],
-    keyPlaceholder: "AIza...",
-    keyUrl: "https://aistudio.google.com/apikey",
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    description: "GPT models",
-    models: [
-      { id: "gpt-4o-mini", name: "GPT-4o Mini", tag: "Rẻ, nhanh" },
-      { id: "gpt-4o", name: "GPT-4o", tag: "Chính xác" },
-      { id: "gpt-4.1-nano", name: "GPT-4.1 Nano", tag: "Rẻ nhất" },
-    ],
-    keyPlaceholder: "sk-...",
-    keyUrl: "https://platform.openai.com/api-keys",
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    description: "Claude models",
-    models: [
-      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", tag: "Rẻ, nhanh" },
-      { id: "claude-sonnet-4-6-20250514", name: "Claude Sonnet 4.6", tag: "Chính xác" },
-    ],
-    keyPlaceholder: "sk-ant-...",
-    keyUrl: "https://console.anthropic.com/settings/keys",
-  },
-];
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -60,6 +24,25 @@ export default function SettingsPage() {
     aiApiKey: "",
   });
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
+  // Live model list from the provider's API (null = not loaded, fall back to suggestions)
+  const [liveModels, setLiveModels] = useState<AIModelOption[] | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  async function loadModels(provider: string, apiKey: string) {
+    setLoadingModels(true);
+    try {
+      const res = await fetch("/api/ai/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey }),
+      });
+      const data = await res.json();
+      if (data.success) setLiveModels(data.data);
+      else { setLiveModels(null); toast.error(data.error || "Không tải được danh sách model"); }
+    } finally {
+      setLoadingModels(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/settings")
@@ -71,12 +54,28 @@ export default function SettingsPage() {
             aiModel: data.data.aiModel || "",
             aiApiKey: data.data.aiApiKey || "",
           });
+          if (data.data.aiProvider && data.data.aiApiKey) loadModels(data.data.aiProvider, data.data.aiApiKey);
         }
       })
       .finally(() => setLoading(false));
   }, []);
 
   const selectedProvider = AI_PROVIDERS.find((p) => p.id === settings.aiProvider);
+
+  // Live list (tagged with our suggestions) when available, else the suggestions.
+  // Always keep the saved model visible so the select never shows blank.
+  const modelOptions: AIModelOption[] = (() => {
+    if (!selectedProvider) return [];
+    const tags = new Map(selectedProvider.suggested.map((m) => [m.id, m.tag]));
+    const base = liveModels
+      ? liveModels.map((m) => ({ ...m, tag: tags.get(m.id) }))
+      : selectedProvider.suggested;
+    if (settings.aiModel && !base.some((m) => m.id === settings.aiModel)) {
+      return [{ id: settings.aiModel, name: settings.aiModel, tag: liveModels ? "Không còn hỗ trợ" : undefined }, ...base];
+    }
+    return base;
+  })();
+  const modelUnavailable = !!liveModels && !!settings.aiModel && !liveModels.some((m) => m.id === settings.aiModel);
 
   async function handleSave() {
     setSaving(true);
@@ -193,7 +192,12 @@ export default function SettingsPage() {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => setSettings({ ...settings, aiProvider: p.id, aiModel: p.models[0].id, aiApiKey: settings.aiProvider === p.id ? settings.aiApiKey : "" })}
+                      onClick={() => {
+                        if (p.id === settings.aiProvider) return;
+                        setSettings({ ...settings, aiProvider: p.id, aiModel: p.defaultModel, aiApiKey: "" });
+                        setLiveModels(null);
+                        setTestResult(null);
+                      }}
                       className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
                         settings.aiProvider === p.id
                           ? "border-primary bg-primary/5 ring-1 ring-primary"
@@ -211,22 +215,35 @@ export default function SettingsPage() {
                 <>
                   {/* Model */}
                   <div className="space-y-2">
-                    <Label>Model <InfoTooltip content="Model rẻ hơn thường đủ cho việc parse giao dịch đơn giản" /></Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Model <InfoTooltip content="Model rẻ hơn thường đủ cho việc parse giao dịch đơn giản" /></Label>
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs cursor-pointer"
+                        onClick={() => loadModels(settings.aiProvider, settings.aiApiKey)}
+                        disabled={loadingModels || !settings.aiApiKey}
+                        title={settings.aiApiKey ? "Lấy danh sách model mới nhất từ provider" : "Nhập API key trước"}>
+                        {loadingModels ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                        {liveModels ? "Tải lại danh sách" : "Tải danh sách model"}
+                      </Button>
+                    </div>
                     <Select value={settings.aiModel} onValueChange={(v) => v && setSettings({ ...settings, aiModel: v })}>
                       <SelectTrigger className="cursor-pointer">
-                        <SelectValue>{selectedProvider.models.find((m) => m.id === settings.aiModel)?.name || "Chọn model"}</SelectValue>
+                        <SelectValue>{modelOptions.find((m) => m.id === settings.aiModel)?.name || "Chọn model"}</SelectValue>
                       </SelectTrigger>
-                      <SelectContent>
-                        {selectedProvider.models.map((m) => (
+                      <SelectContent className="max-h-80">
+                        {modelOptions.map((m) => (
                           <SelectItem key={m.id} value={m.id} className="cursor-pointer">
                             <div className="flex items-center gap-2">
                               {m.name}
-                              <Badge variant="secondary" className="text-[10px]">{m.tag}</Badge>
+                              {m.tag && <Badge variant={m.tag === "Không còn hỗ trợ" ? "destructive" : "secondary"} className="text-[10px]">{m.tag}</Badge>}
                             </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {modelUnavailable && (
+                      <p className="text-xs text-red-500">Model đang chọn không còn trong danh sách của {selectedProvider.name}. Hãy chọn model khác rồi bấm Lưu.</p>
+                    )}
+                    {liveModels && <p className="text-xs text-muted-foreground">{liveModels.length} model khả dụng với API key này</p>}
                   </div>
 
                   {/* API Key */}
